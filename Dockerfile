@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libedit2 \
         libsqlite3-0 \
         libc6-dev \
+        libncurses6 \
         binutils \
         libgcc-13-dev \
         libstdc++-13-dev \
