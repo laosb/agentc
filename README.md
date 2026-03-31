@@ -1,6 +1,8 @@
 # claudec
 
-Run [Claude Code](https://claude.ai/claude-code) inside an Apple [`container`](https://apple.github.io/container/), with persistent profiles and per-project memory isolation.
+Run [Claude Code](https://claude.ai/claude-code) inside an Apple [`container`](https://apple.github.io/container/), with persistent profiles and per-project memory isolation, while isolating the rest of your system from Claude Code's access.
+
+(This is mostly vibe-coded for my own use case, just to set expectations. Contributions are very welcome though!)
 
 ## Requirements
 
@@ -15,14 +17,7 @@ Follow the official Apple instructions to install and start the `container` daem
 
 **2. Install `claudec`**
 
-It's a simple shell script, so:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/laosb/claudec/main/claudec -o /usr/local/bin/claudec
-chmod +x /usr/local/bin/claudec
-```
-
-Or clone the repo and symlink it:
+It's a simple shell script, so clone the repo and symlink it is enough:
 
 ```sh
 git clone https://github.com/laosb/claudec.git
