@@ -36,8 +36,8 @@ fi
 # Source swiftly environment so PATH is updated
 [ -f "$SWIFTLY_HOME/env.sh" ] && . "$SWIFTLY_HOME/env.sh"
 
-# Install latest stable Swift toolchain if none is active
-if command -v swiftly &>/dev/null && ! swift --version &>/dev/null 2>&1; then
+# Install latest stable Swift toolchain if none is installed yet
+if command -v swiftly &>/dev/null && [ -z "$(ls -A "$SWIFTLY_HOME/toolchains/" 2>/dev/null)" ]; then
     echo "==> Installing Swift latest release..."
     swiftly install --assume-yes latest
 fi
@@ -51,6 +51,12 @@ if ! command -v claude &>/dev/null; then
     curl -fsSL https://claude.ai/install.sh | bash
     # Re-export PATH in case the installer added new directories
     export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
+fi
+
+# ── Dispatch ───────────────────────────────────────────────────────────────────
+if [ "${1:-}" = "sh" ]; then
+    shift
+    exec /bin/bash "$@"
 fi
 
 exec claude "$@"

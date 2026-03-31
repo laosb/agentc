@@ -39,9 +39,4 @@ CONTAINER_ARGS=(
     -w "${CLAUDEC_WORKSPACE_CONTAINER}"
 )
 
-if [[ "${1:-}" == "sh" ]]; then
-    shift
-    exec container run "${CONTAINER_ARGS[@]}" --entrypoint /bin/bash "${CLAUDEC_IMAGE}" "$@"
-else
-    exec container run "${CONTAINER_ARGS[@]}" "${CLAUDEC_IMAGE}" "${@+"$@"}"
-fi
+exec container run "${CONTAINER_ARGS[@]}" "${CLAUDEC_IMAGE}" "${@+"$@"}"
