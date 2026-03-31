@@ -42,13 +42,15 @@ if command -v swiftly &>/dev/null && ! swift --version &>/dev/null 2>&1; then
     swiftly install --assume-yes latest
 fi
 
-# ── Claude Code ────────────────────────────────────────────────────────────────
-if [ ! -x "$HOME/.claude/bin/claude" ] && ! command -v claude &>/dev/null; then
-    echo "==> Installing Claude Code..."
-    curl -fsSL https://claude.ai/install.sh | bash
-fi
-
 # Extend PATH with all user-local bin directories
 export PATH="$HOME/.claude/bin:$HOME/.local/bin:$SWIFTLY_HOME/bin:$PATH"
+
+# ── Claude Code ────────────────────────────────────────────────────────────────
+if ! command -v claude &>/dev/null; then
+    echo "==> Installing Claude Code..."
+    curl -fsSL https://claude.ai/install.sh | bash
+    # Re-export PATH in case the installer added new directories
+    export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
+fi
 
 exec claude "$@"
