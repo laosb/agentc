@@ -1,0 +1,32 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install container CLI
+        run: brew install container
+
+      - name: Start container system
+        run: container system start
+
+      - name: Pull image
+        run: container image pull ghcr.io/laosb/claudec:latest
+
+      - name: Cache shared test profile
+        uses: actions/cache@v4
+        with:
+          path: ~/.claudec/profiles/__TEST_shared
+          key: claudec-test-profile-${{ hashFiles('bootstrap.sh') }}
+
+      - name: Run tests
+        run: bash test.sh

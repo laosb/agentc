@@ -34,26 +34,36 @@ fi
 # ── Exclude folders ───────────────────────────────────────────────────────────
 CLAUDEC_EXCLUDE_MOUNTS=()
 if [[ -n "${CLAUDEC_EXCLUDE_FOLDERS:-}" ]]; then
-    _empty_dir="$(mktemp -d /tmp/claudec-empty.XXXXXX)"
     IFS=',' read -ra _folders <<< "${CLAUDEC_EXCLUDE_FOLDERS}"
     for _f in "${_folders[@]}"; do
         _f="${_f#/}"   # strip leading slash
         _f="${_f%/}"   # strip trailing slash
         [[ -z "$_f" ]] && continue
+        _empty_dir="$(mktemp -d /tmp/claudec-empty.XXXXXX)"
         CLAUDEC_EXCLUDE_MOUNTS+=(-v "${_empty_dir}:${CLAUDEC_WORKSPACE_CONTAINER}/${_f}:ro")
     done
     unset _folders _f _empty_dir
 fi
 
+# ── Bootstrap override ────────────────────────────────────────────────────────
+CLAUDEC_BOOTSTRAP_MOUNT=()
+if [[ -n "${CLAUDEC_BOOTSTRAP_SCRIPT:-}" ]]; then
+    CLAUDEC_BOOTSTRAP_MOUNT=(-v "${CLAUDEC_BOOTSTRAP_SCRIPT}:/entrypoint.sh:ro")
+fi
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 CONTAINER_ARGS=(
-    --rm -it
+    --rm -i
     --memory 1.5g
+    "${CLAUDEC_BOOTSTRAP_MOUNT[@]+"${CLAUDEC_BOOTSTRAP_MOUNT[@]}"}"
     -v "${CLAUDEC_PROFILE_DIR}/home:/home/claude"
     -v "${CLAUDEC_WORKSPACE}:${CLAUDEC_WORKSPACE_CONTAINER}"
     -w "${CLAUDEC_WORKSPACE_CONTAINER}"
     "${CLAUDEC_EXCLUDE_MOUNTS[@]+"${CLAUDEC_EXCLUDE_MOUNTS[@]}"}"
     ${CLAUDEC_CONTAINER_FLAGS:-}
 )
+
+# Only allocate a pseudo-TTY when stdin is a terminal
+[[ -t 0 ]] && CONTAINER_ARGS+=(-t)
 
 exec container run "${CONTAINER_ARGS[@]}" "${CLAUDEC_IMAGE}" "${@+"$@"}"
