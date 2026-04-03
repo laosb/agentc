@@ -39,5 +39,13 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
+        .testTarget(
+            name: "AgentIsolationTests",
+            dependencies: ["AgentIsolation"]
+        ),
+        .testTarget(
+            name: "ClaudecIntegrationTests",
+            dependencies: []
+        ),
     ]
 )

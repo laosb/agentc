@@ -18,12 +18,16 @@ struct ClaudecCommand: AsyncParsableCommand {
   mutating func run() async throws {
     let env = ProcessInfo.processInfo.environment
 
-    // CLAUDEC_CONTAINER_FLAGS is not supported in the Swift implementation.
-    if let flags = env["CLAUDEC_CONTAINER_FLAGS"], !flags.isEmpty {
-      throw ClaudecError.unsupportedEnvVar(
-        "CLAUDEC_CONTAINER_FLAGS is not supported. "
-          + "Configure container options via the supported environment variables."
-      )
+    // Reject legacy shell-script env vars that are not supported in the Swift binary.
+    for unsupported in [
+      "CLAUDEC_CONTAINER_FLAGS",
+      "CLAUDEC_CHECK_UPDATE",
+    ] {
+      if let value = env[unsupported], !value.isEmpty {
+        throw ClaudecError.unsupportedEnvVar(
+          "\(unsupported) is not supported in the Swift implementation."
+        )
+      }
     }
 
     // ── Resolve profile directory ──────────────────────────────────────
@@ -61,14 +65,6 @@ struct ClaudecCommand: AsyncParsableCommand {
 
     let allocateTTY = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
 
-    // ── Check for script updates ───────────────────────────────────────
-    let checkUpdate = env["CLAUDEC_CHECK_UPDATE"].map { $0 != "0" } ?? true
-    if checkUpdate {
-      let executableDir = URL(fileURLWithPath: CommandLine.arguments[0])
-        .deletingLastPathComponent()
-      await checkForScriptUpdate(in: executableDir)
-    }
-
     // ── Set up runtime ─────────────────────────────────────────────────
     let storagePath =
       FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -104,79 +100,6 @@ struct ClaudecCommand: AsyncParsableCommand {
     let session = AgentSession(config: config, runtime: runtime)
     let exitCode = try await session.run()
     throw ExitCode(exitCode)
-  }
-}
-
-// MARK: - Update checks
-
-private func checkForScriptUpdate(in dir: URL) async {
-  let gitDir = dir.appending(path: ".git")
-  guard FileManager.default.fileExists(atPath: gitDir.path) else { return }
-
-  let fetchResult = await runProcess(
-    ["/usr/bin/git", "-C", dir.path, "fetch", "--quiet", "origin"],
-    captureOutput: false
-  )
-  guard fetchResult.exitCode == 0 else { return }
-
-  let localResult = await runProcess(
-    ["/usr/bin/git", "-C", dir.path, "rev-parse", "HEAD"],
-    captureOutput: true
-  )
-  guard localResult.exitCode == 0 else { return }
-  let local = localResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
-
-  let remoteResult = await runProcess(
-    ["/usr/bin/git", "-C", dir.path, "rev-parse", "@{u}"],
-    captureOutput: true
-  )
-  let remote =
-    remoteResult.exitCode == 0
-    ? remoteResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
-    : ""
-
-  if !remote.isEmpty && local != remote {
-    print("claudec: update available — run: git -C '\(dir.path)' pull --ff-only")
-  }
-}
-
-// MARK: - Process helper
-
-private struct ProcessResult: Sendable {
-  let exitCode: Int32
-  let output: String
-}
-
-private func runProcess(_ args: [String], captureOutput: Bool) async -> ProcessResult {
-  await withCheckedContinuation { continuation in
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: args[0])
-    process.arguments = Array(args.dropFirst())
-    process.standardError = FileHandle.nullDevice
-
-    let pipe = Pipe()
-    if captureOutput {
-      process.standardOutput = pipe
-    } else {
-      process.standardOutput = FileHandle.nullDevice
-    }
-
-    process.terminationHandler = { p in
-      let output: String
-      if captureOutput {
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        output = String(data: data, encoding: .utf8) ?? ""
-      } else {
-        output = ""
-      }
-      continuation.resume(returning: ProcessResult(exitCode: p.terminationStatus, output: output))
-    }
-
-    do {
-      try process.run()
-    } catch {
-      continuation.resume(returning: ProcessResult(exitCode: -1, output: ""))
-    }
   }
 }
 
