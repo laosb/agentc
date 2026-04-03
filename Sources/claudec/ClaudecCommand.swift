@@ -1,8 +1,6 @@
 import AgentIsolation
 import AgentIsolationAppleContainerRuntime
 import ArgumentParser
-import Containerization
-import ContainerizationOS
 import Foundation
 import Logging
 
@@ -71,14 +69,28 @@ struct ClaudecCommand: AsyncParsableCommand {
       await checkForScriptUpdate(in: executableDir)
     }
 
+    // ── Set up runtime ─────────────────────────────────────────────────
+    let storagePath =
+      FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+      .first!
+      .appendingPathComponent("com.apple.claudec")
+      .path
+
+    let runtimeConfig = ContainerRuntimeConfiguration(storagePath: storagePath)
+    let runtime = AppleContainerRuntime(config: runtimeConfig)
+
     // ── Auto-update image ──────────────────────────────────────────────
     let autoUpdate = env["CLAUDEC_IMAGE_AUTO_UPDATE"].map { $0 != "0" } ?? true
     if autoUpdate {
-      let removeOld = env["CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD"].map { $0 != "0" } ?? true
-      await pullLatestImage(reference: image, removeOldIfUpdated: removeOld)
+      try await runtime.prepare()
+      let oldImage = try? await runtime.inspectImage(ref: image)
+      let newImage = try? await runtime.pullImage(ref: image)
+      if let old = oldImage, let new = newImage, old.digest != new.digest {
+        print("claudec: loaded newer image for \(image)")
+      }
     }
 
-    // ── Run container ──────────────────────────────────────────────────
+    // ── Run container via AgentSession ─────────────────────────────────
     let config = IsolationConfig(
       image: image,
       profileHomeDir: profileDir.appending(path: "home"),
@@ -89,8 +101,8 @@ struct ClaudecCommand: AsyncParsableCommand {
       allocateTTY: allocateTTY
     )
 
-    let runtime = AppleContainerRuntime()
-    let exitCode = try await runtime.run(config: config)
+    let session = AgentSession(config: config, runtime: runtime)
+    let exitCode = try await session.run()
     throw ExitCode(exitCode)
   }
 }
@@ -125,24 +137,6 @@ private func checkForScriptUpdate(in dir: URL) async {
 
   if !remote.isEmpty && local != remote {
     print("claudec: update available — run: git -C '\(dir.path)' pull --ff-only")
-  }
-}
-
-private func pullLatestImage(reference: String, removeOldIfUpdated: Bool) async {
-  let dataRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-    .first!.appendingPathComponent("com.apple.claudec")
-  let imageStoreRoot = dataRoot.appendingPathComponent("imagestore")
-  guard let imageStore = try? ImageStore(path: imageStoreRoot) else { return }
-
-  let oldDigest: String? = try? await imageStore.get(reference: reference).digest
-
-  do {
-    let newImage = try await imageStore.pull(reference: reference)
-    if let old = oldDigest, old != newImage.digest {
-      print("claudec: loaded newer image for \(reference)")
-    }
-  } catch {
-    // Pull failure is non-fatal; continue with existing local image.
   }
 }
 

@@ -36,8 +36,6 @@ let package = Package(
                 "AgentIsolation",
                 "AgentIsolationAppleContainerRuntime",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
-                .product(name: "Containerization", package: "containerization"),
-                .product(name: "ContainerizationOS", package: "containerization"),
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),

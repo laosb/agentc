@@ -2,250 +2,287 @@ import AgentIsolation
 import Containerization
 import ContainerizationArchive
 import ContainerizationOS
-import CryptoKit
 import Foundation
 import Logging
 
+// MARK: - AppleContainerRuntime
+
 /// Container runtime that runs containers directly using Apple's Virtualization.framework
 /// via the `containerization` package — no XPC daemon required.
-public struct AppleContainerRuntime: ContainerRuntimeProtocol {
-    public init() {}
+public final class AppleContainerRuntime: ContainerRuntime, @unchecked Sendable {
+  public typealias Image = AppleContainerImage
+  public typealias Container = AppleContainerContainer
 
-    // MARK: - Data directories
+  private let storagePath: URL
+  private var manager: ContainerManager?
+  private var imageStore: ImageStore?
 
-    private static var dataRoot: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first!
-            .appendingPathComponent("com.apple.claudec")
+  private static var containerAppDataRoot: URL {
+    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+      .first!
+      .appendingPathComponent("com.apple.container")
+  }
+
+  public required init(config: ContainerRuntimeConfiguration) {
+    self.storagePath = URL(fileURLWithPath: config.storagePath)
+  }
+
+  // MARK: - ContainerRuntime
+
+  public func prepare() async throws {
+    try FileManager.default.createDirectory(at: storagePath, withIntermediateDirectories: true)
+
+    let kernel = try await getOrDownloadKernel()
+
+    let imageStoreRoot = storagePath.appendingPathComponent("imagestore")
+    let store = try ImageStore(path: imageStoreRoot)
+    self.imageStore = store
+
+    let network: ContainerManager.Network?
+    if #available(macOS 26.0, *) {
+      network = try ContainerManager.VmnetNetwork()
+    } else {
+      network = nil
     }
 
-    private static var containerAppDataRoot: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first!
-            .appendingPathComponent("com.apple.container")
+    self.manager = try await ContainerManager(
+      kernel: kernel,
+      initfsReference: "ghcr.io/apple/containerization/vminit:0.29.0",
+      imageStore: store,
+      network: network
+    )
+  }
+
+  public func pullImage(ref: String) async throws -> AppleContainerImage? {
+    guard let store = imageStore else {
+      throw AppleContainerRuntimeError.notPrepared
+    }
+    do {
+      let image = try await store.pull(reference: ref)
+      return AppleContainerImage(ref: ref, digest: image.digest)
+    } catch {
+      // Pull failure — image may not exist or network error
+      return nil
+    }
+  }
+
+  public func inspectImage(ref: String) async throws -> AppleContainerImage? {
+    guard let store = imageStore else {
+      throw AppleContainerRuntimeError.notPrepared
+    }
+    do {
+      let image = try await store.get(reference: ref)
+      return AppleContainerImage(ref: ref, digest: image.digest)
+    } catch {
+      return nil
+    }
+  }
+
+  public func runContainer(
+    imageRef: String,
+    configuration: ContainerConfiguration
+  ) async throws -> AppleContainerContainer {
+    guard var manager else {
+      throw AppleContainerRuntimeError.notPrepared
     }
 
-    // MARK: - Run
+    // Set up terminal before creating the container
+    var terminal: Terminal? = nil
+    switch configuration.io {
+    case .currentTerminal:
+      terminal = try? Terminal.current
+      try terminal?.setraw()
+    default:
+      break
+    }
 
-    public func run(config: IsolationConfig) async throws -> Int32 {
-        let dataRoot = Self.dataRoot
-        try FileManager.default.createDirectory(at: dataRoot, withIntermediateDirectories: true)
+    let containerID = UUID().uuidString.lowercased()
 
-        // Resolve canonical workspace (follows symlinks, handles /tmp → /private/tmp on macOS)
-        let canonicalWorkspace = config.workspace.resolvingSymlinksInPathWithPrivate()
-        let workspaceHash = sha256Hex(canonicalWorkspace.path)
-        let workspaceContainerPath = "/workspace/\(workspaceHash)"
+    let container = try await manager.create(
+      containerID,
+      reference: imageRef,
+      rootfsSizeInBytes: UInt64(8).gib()
+    ) { containerConfig in
+      containerConfig.cpus = 4
+      containerConfig.memoryInBytes = UInt64(1536).mib()
 
-        try FileManager.default.createDirectory(
-            at: config.profileHomeDir,
-            withIntermediateDirectories: true
-        )
+      // Entrypoint
+      if !configuration.entrypoint.isEmpty {
+        containerConfig.process.arguments = configuration.entrypoint
+      }
 
-        let kernel = try await getOrDownloadKernel(dataRoot: dataRoot)
+      // Working directory
+      if let workDir = configuration.workingDirectory {
+        containerConfig.process.workingDirectory = workDir
+      }
 
-        let imageStoreRoot = dataRoot.appendingPathComponent("imagestore")
-        let imageStore = try ImageStore(path: imageStoreRoot)
+      // Mounts
+      for mount in configuration.mounts {
+        containerConfig.mounts.append(.share(
+          source: mount.hostPath,
+          destination: mount.containerPath
+        ))
+      }
 
-        let network: ContainerManager.Network?
-        if #available(macOS 26.0, *) {
-            network = try ContainerManager.VmnetNetwork()
-        } else {
-            network = nil
-        }
-
-        // ContainerManager handles initfs caching: downloads vminit:0.29.0 once,
-        // creates initfs.ext4, and reuses it on subsequent runs.
-        var manager = try await ContainerManager(
-            kernel: kernel,
-            initfsReference: "ghcr.io/apple/containerization/vminit:0.29.0",
-            imageStore: imageStore,
-            network: network
-        )
-
-        // Set up terminal before creating the container
-        var terminal: Terminal? = nil
-        if config.allocateTTY {
-            terminal = try? Terminal.current
-            try terminal?.setraw()
-        }
-        defer { terminal?.tryReset() }
-
-        // virtiofs requires directory mounts; copy the bootstrap script into a
-        // temp dir so it can be shared as a read-only virtiofs volume.
-        var bootstrapTempDir: URL? = nil
-        var bootstrapContainerPath: String? = nil
-        defer { if let d = bootstrapTempDir { try? FileManager.default.removeItem(at: d) } }
-
-        if let bootstrapScript = config.bootstrapScript {
-            let tempDir = try makeTempDir()
-            bootstrapTempDir = tempDir
-            let destScript = tempDir.appendingPathComponent("entrypoint.sh")
-            try FileManager.default.copyItem(at: bootstrapScript, to: destScript)
-            // Preserve or grant execute permission
-            let srcPerms = (try? FileManager.default.attributesOfItem(atPath: bootstrapScript.path)[.posixPermissions] as? Int) ?? 0o644
-            try FileManager.default.setAttributes(
-                [.posixPermissions: srcPerms | 0o111],
-                ofItemAtPath: destScript.path
-            )
-            bootstrapContainerPath = "/entrypoint-bootstrap/entrypoint.sh"
-        }
-
-        // Empty temp dirs mounted over excluded workspace subdirectories
-        var excludeDirs: [(host: URL, container: String)] = []
-        defer { for e in excludeDirs { try? FileManager.default.removeItem(at: e.host) } }
-
-        for rawFolder in config.excludeFolders {
-            let folder = rawFolder.trimmingCharacters(in: .init(charactersIn: "/"))
-            guard !folder.isEmpty else { continue }
-            let tempDir = try makeTempDir()
-            excludeDirs.append((host: tempDir, container: "\(workspaceContainerPath)/\(folder)"))
-        }
-
-        let containerID = UUID().uuidString.lowercased()
-
-        let container = try await manager.create(
-            containerID,
-            reference: config.image,
-            rootfsSizeInBytes: UInt64(8).gib()
-        ) { containerConfig in
-            containerConfig.cpus = 4
-            containerConfig.memoryInBytes = UInt64(1536).mib()
-
-            // Override entrypoint: use custom bootstrap script or image default
-            if let bootstrapPath = bootstrapContainerPath {
-                containerConfig.process.arguments = [bootstrapPath] + config.arguments
-            } else {
-                // init(from: imageConfig) already set entrypoint; append user args
-                containerConfig.process.arguments += config.arguments
-            }
-            containerConfig.process.workingDirectory = workspaceContainerPath
-
-            // Profile home and workspace
-            containerConfig.mounts.append(.share(
-                source: config.profileHomeDir.path,
-                destination: "/home/claude"
-            ))
-            containerConfig.mounts.append(.share(
-                source: canonicalWorkspace.path,
-                destination: workspaceContainerPath
-            ))
-
-            // Excluded folders (each an empty read-only overlay)
-            for exclude in excludeDirs {
-                containerConfig.mounts.append(.share(
-                    source: exclude.host.resolvingSymlinksInPathWithPrivate().path,
-                    destination: exclude.container
-                ))
-            }
-
-            // Bootstrap script directory (if present)
-            if let bootstrapDir = bootstrapTempDir {
-                containerConfig.mounts.append(.share(
-                    source: bootstrapDir.resolvingSymlinksInPathWithPrivate().path,
-                    destination: "/entrypoint-bootstrap"
-                ))
-            }
-
-            // I/O
-            if let t = terminal {
-                containerConfig.process.setTerminalIO(terminal: t)
-            } else {
-                containerConfig.process.stdin = FileHandleReader(.standardInput)
-                containerConfig.process.stdout = FileHandleWriter(.standardOutput)
-                containerConfig.process.stderr = FileHandleWriter(.standardError)
-            }
-        }
-
-        defer { try? manager.delete(containerID) }
-
-        try await container.create()
-        try await container.start()
-
+      // I/O
+      switch configuration.io {
+      case .currentTerminal:
         if let t = terminal {
-            try? await container.resize(to: try t.size)
+          containerConfig.process.setTerminalIO(terminal: t)
         }
-
-        let exitStatus: ExitStatus
-        if let t = terminal {
-            let sigwinchStream = AsyncSignalHandler.create(notify: [SIGWINCH])
-            exitStatus = try await withThrowingTaskGroup(of: ExitStatus?.self) { group in
-                group.addTask {
-                    for await _ in sigwinchStream.signals {
-                        try await container.resize(to: try t.size)
-                    }
-                    return nil
-                }
-                group.addTask { try await container.wait() }
-                var result: ExitStatus? = nil
-                for try await value in group {
-                    if let value {
-                        result = value
-                        group.cancelAll()
-                        break
-                    }
-                }
-                return result ?? ExitStatus(exitCode: 0)
-            }
-        } else {
-            exitStatus = try await container.wait()
-        }
-
-        try await container.stop()
-        return exitStatus.exitCode
+      case .standardIO:
+        containerConfig.process.stdin = FileHandleReader(.standardInput)
+        containerConfig.process.stdout = FileHandleWriter(.standardOutput)
+        containerConfig.process.stderr = FileHandleWriter(.standardError)
+      case .custom:
+        // Custom IO not yet bridged to Containerization types
+        containerConfig.process.stdin = FileHandleReader(.standardInput)
+        containerConfig.process.stdout = FileHandleWriter(.standardOutput)
+        containerConfig.process.stderr = FileHandleWriter(.standardError)
+      }
     }
 
-    // MARK: - Kernel
+    try await container.create()
+    try await container.start()
 
-    private func getOrDownloadKernel(dataRoot: URL) async throws -> Kernel {
-        // 1. Try the container app's installed kernel
-        let appKernelLink = Self.containerAppDataRoot
-            .appendingPathComponent("kernels")
-            .appendingPathComponent("default.kernel-arm64")
-        let appKernelResolved = appKernelLink.resolvingSymlinksInPath()
-        if FileManager.default.fileExists(atPath: appKernelResolved.path) {
-            return Kernel(path: appKernelResolved, platform: .linuxArm)
+    if let t = terminal {
+      try? await container.resize(to: try t.size)
+    }
+
+    return AppleContainerContainer(
+      id: containerID,
+      container: container,
+      manager: manager,
+      terminal: terminal
+    )
+  }
+
+  public func removeContainer(_ container: AppleContainerContainer) async throws {
+    container.terminal?.tryReset()
+    try await container.underlyingContainer.stop()
+    try container.manager.delete(container.id)
+  }
+
+  // MARK: - Kernel
+
+  private func getOrDownloadKernel() async throws -> Kernel {
+    // 1. Try the container app's installed kernel
+    let appKernelLink =
+      Self.containerAppDataRoot
+      .appendingPathComponent("kernels")
+      .appendingPathComponent("default.kernel-arm64")
+    let appKernelResolved = appKernelLink.resolvingSymlinksInPath()
+    if FileManager.default.fileExists(atPath: appKernelResolved.path) {
+      return Kernel(path: appKernelResolved, platform: .linuxArm)
+    }
+
+    // 2. Try our own cached kernel
+    let ourKernelDir = storagePath.appendingPathComponent("kernels")
+    let ourKernelLink = ourKernelDir.appendingPathComponent("default.kernel-arm64")
+    let ourKernelResolved = ourKernelLink.resolvingSymlinksInPath()
+    if FileManager.default.fileExists(atPath: ourKernelResolved.path) {
+      return Kernel(path: ourKernelResolved, platform: .linuxArm)
+    }
+
+    // 3. Download kernel from kata-containers
+    fputs("claudec: downloading kernel (one-time setup)...\n", stderr)
+    let tarURL = URL(
+      string:
+        "https://github.com/kata-containers/kata-containers/releases/download/3.26.0/kata-static-3.26.0-arm64.tar.zst"
+    )!
+    let kernelPathInArchive = "opt/kata/share/kata-containers/vmlinux-6.18.5-177"
+
+    let (tempFile, _) = try await URLSession.shared.download(from: tarURL)
+    defer { try? FileManager.default.removeItem(at: tempFile) }
+
+    var archiveReader = try ArchiveReader(file: tempFile)
+    let (_, kernelData) = try archiveReader.extractFile(path: kernelPathInArchive)
+
+    try FileManager.default.createDirectory(at: ourKernelDir, withIntermediateDirectories: true)
+    let kernelBinary = ourKernelDir.appendingPathComponent("vmlinux-6.18.5-177")
+    try kernelData.write(to: kernelBinary, options: .atomic)
+
+    try? FileManager.default.removeItem(at: ourKernelLink)
+    try FileManager.default.createSymbolicLink(
+      at: ourKernelLink, withDestinationURL: kernelBinary)
+
+    return Kernel(path: kernelBinary, platform: .linuxArm)
+  }
+}
+
+// MARK: - Associated Types
+
+public struct AppleContainerImage: ContainerRuntimeImage {
+  public var ref: String
+  public var digest: String
+
+  public init(ref: String, digest: String) {
+    self.ref = ref
+    self.digest = digest
+  }
+}
+
+public final class AppleContainerContainer: ContainerRuntimeContainer, @unchecked Sendable {
+  public let id: String
+  let underlyingContainer: LinuxContainer
+  var manager: ContainerManager
+  var terminal: Terminal?
+
+  init(
+    id: String,
+    container: LinuxContainer,
+    manager: ContainerManager,
+    terminal: Terminal?
+  ) {
+    self.id = id
+    self.underlyingContainer = container
+    self.manager = manager
+    self.terminal = terminal
+  }
+
+  public func wait(timeoutInSeconds: Int64?) async throws -> Int32 {
+    let exitStatus: ExitStatus
+    if let t = terminal {
+      let sigwinchStream = AsyncSignalHandler.create(notify: [SIGWINCH])
+      exitStatus = try await withThrowingTaskGroup(of: ExitStatus?.self) { group in
+        group.addTask {
+          for await _ in sigwinchStream.signals {
+            try await self.underlyingContainer.resize(to: try t.size)
+          }
+          return nil
         }
-
-        // 2. Try our own cached kernel
-        let ourKernelDir = dataRoot.appendingPathComponent("kernels")
-        let ourKernelLink = ourKernelDir.appendingPathComponent("default.kernel-arm64")
-        let ourKernelResolved = ourKernelLink.resolvingSymlinksInPath()
-        if FileManager.default.fileExists(atPath: ourKernelResolved.path) {
-            return Kernel(path: ourKernelResolved, platform: .linuxArm)
+        group.addTask { try await self.underlyingContainer.wait() }
+        var result: ExitStatus? = nil
+        for try await value in group {
+          if let value {
+            result = value
+            group.cancelAll()
+            break
+          }
         }
-
-        // 3. Download kernel from kata-containers
-        fputs("claudec: downloading kernel (one-time setup)...\n", stderr)
-        let tarURL = URL(string: "https://github.com/kata-containers/kata-containers/releases/download/3.26.0/kata-static-3.26.0-arm64.tar.zst")!
-        let kernelPathInArchive = "opt/kata/share/kata-containers/vmlinux-6.18.5-177"
-
-        let (tempFile, _) = try await URLSession.shared.download(from: tarURL)
-        defer { try? FileManager.default.removeItem(at: tempFile) }
-
-        var archiveReader = try ArchiveReader(file: tempFile)
-        let (_, kernelData) = try archiveReader.extractFile(path: kernelPathInArchive)
-
-        try FileManager.default.createDirectory(at: ourKernelDir, withIntermediateDirectories: true)
-        let kernelBinary = ourKernelDir.appendingPathComponent("vmlinux-6.18.5-177")
-        try kernelData.write(to: kernelBinary, options: .atomic)
-
-        try? FileManager.default.removeItem(at: ourKernelLink)
-        try FileManager.default.createSymbolicLink(at: ourKernelLink, withDestinationURL: kernelBinary)
-
-        return Kernel(path: kernelBinary, platform: .linuxArm)
+        return result ?? ExitStatus(exitCode: 0)
+      }
+    } else {
+      exitStatus = try await underlyingContainer.wait()
     }
+    return exitStatus.exitCode
+  }
 
-    // MARK: - Helpers
+  public func stop() async throws {
+    terminal?.tryReset()
+    try await underlyingContainer.stop()
+  }
+}
 
-    private func sha256Hex(_ string: String) -> String {
-        let data = Data(string.utf8)
-        let digest = SHA256.hash(data: data)
-        return digest.map { String(format: "%02x", $0) }.joined()
+// MARK: - Errors
+
+public enum AppleContainerRuntimeError: LocalizedError {
+  case notPrepared
+
+  public var errorDescription: String? {
+    switch self {
+    case .notPrepared:
+      return "Container runtime has not been prepared. Call prepare() first."
     }
-
-    private func makeTempDir() throws -> URL {
-        let dir = URL(fileURLWithPath: "/tmp/claudec-\(UUID().uuidString.lowercased())")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
+  }
 }
