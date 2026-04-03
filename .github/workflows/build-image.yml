@@ -1,0 +1,74 @@
+name: Build and Push Image to GHCR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - bootstrap.sh
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute version tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          PREFIX="1.${DATE}."
+
+          # Fetch all existing tags for this package from GHCR via GitHub API.
+          # The API paginates at 100 items; we only care about today's tags so
+          # one page is always sufficient.
+          TAGS=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/users/laosb/packages/container/claudec/versions?per_page=100" \
+            | jq -r '.[].metadata.container.tags[]' 2>/dev/null || true)
+
+          # Find the highest n used today, then add 1 (start at 0 when none exist)
+          N=0
+          for tag in $TAGS; do
+            if [[ "$tag" == ${PREFIX}* ]]; then
+              SUFFIX="${tag#"$PREFIX"}"
+              if [[ "$SUFFIX" =~ ^[0-9]+$ ]] && [ "$SUFFIX" -ge "$N" ]; then
+                N=$((SUFFIX + 1))
+              fi
+            fi
+          done
+
+          VERSION="${PREFIX}${N}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Computed tag: ${VERSION}"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ghcr.io/laosb/claudec:${{ steps.tag.outputs.version }}
+            ghcr.io/laosb/claudec:latest
+          cache-from: type=registry,ref=ghcr.io/laosb/claudec:buildcache
+          cache-to: type=registry,ref=ghcr.io/laosb/claudec:buildcache,mode=max

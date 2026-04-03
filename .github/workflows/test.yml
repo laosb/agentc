@@ -6,12 +6,30 @@ on:
   pull_request:
 
 jobs:
-  test:
-    runs-on: macos-26
-
+  unit-tests:
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Swift
+        uses: SwiftyLab/setup-swift@latest
+        with:
+          swift-version: "6.1"
+
+      - name: Run unit tests
+        run: swift test --filter AgentIsolationTests
+
+  integration-tests:
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Swift
+        uses: SwiftyLab/setup-swift@latest
+        with:
+          swift-version: "6.1"
 
       - name: Install container CLI
         run: brew install container
@@ -22,13 +40,16 @@ jobs:
       - name: Pull image
         run: container image pull ghcr.io/laosb/claudec:latest
 
+      - name: Build and sign binary
+        run: bash build.sh
+
       - name: Cache shared test profile
         uses: actions/cache@v4
         with:
           path: ~/.claudec/profiles/__TEST_shared
           key: claudec-test-profile-${{ hashFiles('bootstrap.sh') }}
 
-      - name: Run tests
-        run: bash test.sh
+      - name: Run integration tests
+        run: swift test --filter ClaudecIntegrationTests
         env:
           VERBOSE: 1

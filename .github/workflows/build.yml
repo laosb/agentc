@@ -1,74 +1,40 @@
-name: Build and Push to GHCR
+name: Build and Release
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - Dockerfile
-      - bootstrap.sh
-  workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-24.04-arm
+  build:
+    runs-on: macos-15
     permissions:
-      contents: read
-      packages: write
+      contents: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Setup Swift
+        uses: SwiftyLab/setup-swift@latest
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          swift-version: "6.1"
 
-      - name: Compute version tag
-        id: tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build release binary
+        run: swift build -c release
+
+      - name: Sign binary
         run: |
-          DATE=$(date -u +%Y%m%d)
-          PREFIX="1.${DATE}."
+          codesign --sign - \
+            --entitlements signing/claudec.entitlements \
+            --force .build/release/claudec
 
-          # Fetch all existing tags for this package from GHCR via GitHub API.
-          # The API paginates at 100 items; we only care about today's tags so
-          # one page is always sufficient.
-          TAGS=$(curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/users/laosb/packages/container/claudec/versions?per_page=100" \
-            | jq -r '.[].metadata.container.tags[]' 2>/dev/null || true)
+      - name: Package binary
+        run: |
+          cd .build/release
+          tar czf claudec-arm64-macos.tar.gz claudec
+          mv claudec-arm64-macos.tar.gz "$GITHUB_WORKSPACE/"
 
-          # Find the highest n used today, then add 1 (start at 0 when none exist)
-          N=0
-          for tag in $TAGS; do
-            if [[ "$tag" == ${PREFIX}* ]]; then
-              SUFFIX="${tag#"$PREFIX"}"
-              if [[ "$SUFFIX" =~ ^[0-9]+$ ]] && [ "$SUFFIX" -ge "$N" ]; then
-                N=$((SUFFIX + 1))
-              fi
-            fi
-          done
-
-          VERSION="${PREFIX}${N}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Computed tag: ${VERSION}"
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
         with:
-          context: .
-          platforms: linux/arm64
-          push: true
-          tags: |
-            ghcr.io/laosb/claudec:${{ steps.tag.outputs.version }}
-            ghcr.io/laosb/claudec:latest
-          cache-from: type=registry,ref=ghcr.io/laosb/claudec:buildcache
-          cache-to: type=registry,ref=ghcr.io/laosb/claudec:buildcache,mode=max
+          files: claudec-arm64-macos.tar.gz
