@@ -272,15 +272,8 @@ test_exclude_folders_multi() {
 }
 test_case "CLAUDEC_EXCLUDE_FOLDERS hides multiple comma-separated folders" test_exclude_folders_multi
 
-# Test: CLAUDEC_CONTAINER_FLAGS — extra flags are passed through
-test_container_flags() {
-    run_claudec CLAUDEC_PROFILE="${SHARED_PROFILE}" \
-        CLAUDEC_CONTAINER_FLAGS="-e __TEST_FLAG=hello_from_flags" \
-        sh printenv __TEST_FLAG
-    [[ $_rc -eq 0 ]] || { debug "Expected exit 0, got $_rc"; return 1; }
-    [[ "$_out" == *"hello_from_flags"* ]] || { debug "Expected 'hello_from_flags' in output"; return 1; }
-}
-test_case "CLAUDEC_CONTAINER_FLAGS passes extra flags to container run" test_container_flags
+# Note: CLAUDEC_CONTAINER_FLAGS is not supported in the Swift implementation.
+# Setting it causes claudec to exit with an error (unsupported env var).
 
 # Test: CLAUDEC_BOOTSTRAP_SCRIPT — custom bootstrap script overrides the one in the image
 test_bootstrap_script() {
