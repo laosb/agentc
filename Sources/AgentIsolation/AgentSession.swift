@@ -35,16 +35,18 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
     var mounts: [ContainerConfiguration.Mount] = []
 
     // Profile home → /home/claude
-    mounts.append(.init(
-      hostPath: config.profileHomeDir.path,
-      containerPath: "/home/claude"
-    ))
+    mounts.append(
+      .init(
+        hostPath: config.profileHomeDir.path,
+        containerPath: "/home/claude"
+      ))
 
     // Workspace
-    mounts.append(.init(
-      hostPath: canonicalWorkspace.path,
-      containerPath: workspaceContainerPath
-    ))
+    mounts.append(
+      .init(
+        hostPath: canonicalWorkspace.path,
+        containerPath: workspaceContainerPath
+      ))
 
     // Excluded folders: each gets an empty temp dir mounted as a read-only overlay
     var tempDirs: [URL] = []
@@ -59,11 +61,12 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
       guard !folder.isEmpty else { continue }
       let tempDir = try makeTempDir()
       tempDirs.append(tempDir)
-      mounts.append(.init(
-        hostPath: resolveSymlinksWithPrivate(tempDir).path,
-        containerPath: "\(workspaceContainerPath)/\(folder)",
-        isReadOnly: true
-      ))
+      mounts.append(
+        .init(
+          hostPath: resolveSymlinksWithPrivate(tempDir).path,
+          containerPath: "\(workspaceContainerPath)/\(folder)",
+          isReadOnly: true
+        ))
     }
 
     // Bootstrap script: copy to temp dir so it can be shared as a virtiofs volume
@@ -83,10 +86,11 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
         ofItemAtPath: dest.path
       )
 
-      mounts.append(.init(
-        hostPath: resolveSymlinksWithPrivate(tempDir).path,
-        containerPath: "/entrypoint-bootstrap"
-      ))
+      mounts.append(
+        .init(
+          hostPath: resolveSymlinksWithPrivate(tempDir).path,
+          containerPath: "/entrypoint-bootstrap"
+        ))
       entrypoint = ["/entrypoint-bootstrap/entrypoint.sh"] + config.arguments
     }
 
@@ -104,7 +108,7 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
       imageRef: config.image,
       configuration: containerConfig
     )
-    defer { try? _runBlocking { try await runtime.removeContainer(container) } }
+    defer { _runBlocking { try await runtime.removeContainer(container) } }
 
     let exitCode = try await container.wait(timeoutInSeconds: nil)
     try await container.stop()
@@ -129,16 +133,16 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
   private func resolveSymlinksWithPrivate(_ url: URL) -> URL {
     let resolved = url.resolvingSymlinksInPath()
     #if os(macOS)
-    let parts = resolved.pathComponents
-    if parts.count > 1, parts.first == "/",
-      ["tmp", "var", "etc"].contains(parts[1])
-    {
-      if let withPrivate = NSURL.fileURL(
-        withPathComponents: ["/", "private"] + parts[1...]
-      ) {
-        return withPrivate
+      let parts = resolved.pathComponents
+      if parts.count > 1, parts.first == "/",
+        ["tmp", "var", "etc"].contains(parts[1])
+      {
+        if let withPrivate = NSURL.fileURL(
+          withPathComponents: ["/", "private"] + parts[1...]
+        ) {
+          return withPrivate
+        }
       }
-    }
     #endif
     return resolved
   }

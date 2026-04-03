@@ -118,10 +118,11 @@ public final class AppleContainerRuntime: ContainerRuntime, @unchecked Sendable 
 
       // Mounts
       for mount in configuration.mounts {
-        containerConfig.mounts.append(.share(
-          source: mount.hostPath,
-          destination: mount.containerPath
-        ))
+        containerConfig.mounts.append(
+          .share(
+            source: mount.hostPath,
+            destination: mount.containerPath
+          ))
       }
 
       // I/O
@@ -195,7 +196,7 @@ public final class AppleContainerRuntime: ContainerRuntime, @unchecked Sendable 
     let (tempFile, _) = try await URLSession.shared.download(from: tarURL)
     defer { try? FileManager.default.removeItem(at: tempFile) }
 
-    var archiveReader = try ArchiveReader(file: tempFile)
+    let archiveReader = try ArchiveReader(file: tempFile)
     let (_, kernelData) = try archiveReader.extractFile(path: kernelPathInArchive)
 
     try FileManager.default.createDirectory(at: ourKernelDir, withIntermediateDirectories: true)

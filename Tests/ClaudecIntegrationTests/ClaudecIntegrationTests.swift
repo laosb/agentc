@@ -314,13 +314,13 @@ struct ClaudecIntegrationTests {
     let customBootstrap = URL(
       fileURLWithPath: "/tmp/__TEST_bootstrap_swift.\(UUID().uuidString.prefix(6))")
     try """
-      #!/bin/bash
-      echo "custom_bootstrap_marker"
-      if [ "${1:-}" = "sh" ]; then
-          shift
-          exec /bin/bash -c "$*"
-      fi
-      """.write(to: customBootstrap, atomically: true, encoding: .utf8)
+    #!/bin/bash
+    echo "custom_bootstrap_marker"
+    if [ "${1:-}" = "sh" ]; then
+        shift
+        exec /bin/bash -c "$*"
+    fi
+    """.write(to: customBootstrap, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o755], ofItemAtPath: customBootstrap.path)
     defer { try? FileManager.default.removeItem(at: customBootstrap) }

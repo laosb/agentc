@@ -163,13 +163,15 @@ struct AgentSessionTests {
     // On macOS, /tmp resolves to /private/tmp
     let expectedPath: String
     #if os(macOS)
-    if canonicalPath.hasPrefix("/tmp") || canonicalPath.hasPrefix("/var") || canonicalPath.hasPrefix("/etc") {
-      expectedPath = "/private" + canonicalPath
-    } else {
-      expectedPath = canonicalPath
-    }
+      if canonicalPath.hasPrefix("/tmp") || canonicalPath.hasPrefix("/var")
+        || canonicalPath.hasPrefix("/etc")
+      {
+        expectedPath = "/private" + canonicalPath
+      } else {
+        expectedPath = canonicalPath
+      }
     #else
-    expectedPath = canonicalPath
+      expectedPath = canonicalPath
     #endif
     let hash = sha256Hex(expectedPath)
     let expectedContainerPath = "/workspace/\(hash)"
@@ -229,7 +231,9 @@ struct AgentSessionTests {
     _ = try await session.run()
 
     let mounts = runtime.lastContainerConfiguration!.mounts
-    let excludeMounts = mounts.filter { $0.containerPath.contains("/secret") || $0.containerPath.contains("/node_modules") }
+    let excludeMounts = mounts.filter {
+      $0.containerPath.contains("/secret") || $0.containerPath.contains("/node_modules")
+    }
     #expect(excludeMounts.count == 2)
   }
 
