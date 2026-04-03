@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       contents: write
 
@@ -17,7 +17,7 @@ jobs:
       - name: Setup Swift
         uses: SwiftyLab/setup-swift@latest
         with:
-          swift-version: "6.1"
+          swift-version: "6.3"
 
       - name: Build release binary
         run: swift build -c release
