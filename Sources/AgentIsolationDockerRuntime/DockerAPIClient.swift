@@ -39,8 +39,10 @@ final class DockerAPIClient: Sendable {
     request.method = .GET
     let response = try await httpClient.execute(request, timeout: .seconds(10))
     guard response.status == .ok else {
+      let body = try? await response.body.collect(upTo: 1024 * 1024)
       throw DockerRuntimeError.dockerNotAccessible(
-        "Docker responded with status \(response.status.code)")
+        "Docker responded with status \(response.status.code): \(body.flatMap { String(buffer: $0) } ?? "unknown error")"
+      )
     }
   }
 
@@ -177,8 +179,9 @@ final class DockerAPIClient: Sendable {
     let response = try await httpClient.execute(request, timeout: .seconds(Int64(timeout + 30)))
     for try await _ in response.body {}
     // 204 = stopped, 304 = already stopped, 404 = not found — all acceptable
-    guard response.status == .noContent || response.status == .notModified
-      || response.status == .notFound
+    guard
+      response.status == .noContent || response.status == .notModified
+        || response.status == .notFound
     else {
       throw DockerRuntimeError.apiError(
         Int(response.status.code), "Failed to stop container \(id)")

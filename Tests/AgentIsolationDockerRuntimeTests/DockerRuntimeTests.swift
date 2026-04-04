@@ -1,6 +1,6 @@
 #if ContainerRuntimeDocker
   import AgentIsolation
-  import AgentIsolationDockerRuntime
+  @testable import AgentIsolationDockerRuntime
   import Foundation
   import Testing
 
@@ -58,6 +58,41 @@
         let description = error.errorDescription ?? ""
         #expect(!description.isEmpty, "Error should have a description: \(error)")
       }
+    }
+
+    @Test("currentPlatformJSON returns valid JSON for current architecture")
+    func platformJSON() {
+      let json = DockerRuntime.currentPlatformJSON
+      #expect(!json.isEmpty, "Platform JSON should not be empty on supported architectures")
+
+      // Parse and verify structure
+      let data = Data(json.utf8)
+      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String]
+      #expect(obj != nil, "Should be valid JSON")
+      #expect(obj?["os"] == "linux")
+
+      let arch = obj?["architecture"]
+      #if arch(arm64)
+        #expect(arch == "arm64")
+      #elseif arch(x86_64)
+        #expect(arch == "amd64")
+      #endif
+    }
+
+    @Test("DockerRuntime is Sendable")
+    func runtimeSendable() async throws {
+      let config = ContainerRuntimeConfiguration(storagePath: "/tmp/test")
+      let runtime = DockerRuntime(config: config)
+      defer { Task { try? await runtime.shutdown() } }
+
+      // Verify Sendable by passing across isolation boundaries
+      let _: any Sendable = runtime
+    }
+
+    @Test("DockerImage is Sendable")
+    func imageSendable() {
+      let image = DockerImage(ref: "test:latest", digest: "sha256:abc")
+      let _: any Sendable = image
     }
   }
 

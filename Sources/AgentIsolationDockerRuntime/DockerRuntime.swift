@@ -1,6 +1,7 @@
 import AgentIsolation
 import Foundation
 import Logging
+import Synchronization
 
 // MARK: - DockerRuntime
 
@@ -8,7 +9,7 @@ import Logging
 ///
 /// Supports Unix domain socket (default: `/var/run/docker.sock`) and TCP connections.
 /// Configure the endpoint using `ContainerRuntimeConfiguration.endpoint`.
-public final class DockerRuntime: ContainerRuntime, @unchecked Sendable {
+public final class DockerRuntime: ContainerRuntime, Sendable {
   public typealias Image = DockerImage
   public typealias Container = DockerContainer
 
@@ -33,7 +34,7 @@ public final class DockerRuntime: ContainerRuntime, @unchecked Sendable {
   }
 
   /// JSON-encoded platform string for the current host architecture.
-  private static let currentPlatformJSON: String = {
+  static let currentPlatformJSON: String = {
     #if arch(arm64)
       return #"{"os":"linux","architecture":"arm64"}"#
     #elseif arch(x86_64)
@@ -193,14 +194,14 @@ public struct DockerImage: ContainerRuntimeImage {
   }
 }
 
-public final class DockerContainer: ContainerRuntimeContainer, @unchecked Sendable {
+public final class DockerContainer: ContainerRuntimeContainer, Sendable {
   public let id: String
   let client: DockerAPIClient
   let attachConnection: DockerStreamAttach?
   let terminalState: DockerTerminalState?
   let useTTY: Bool
 
-  private var sigwinchSource: DispatchSourceSignal?
+  private let _sigwinchSource = Mutex<DispatchSourceSignal?>(nil)
 
   init(
     id: String,
@@ -226,7 +227,10 @@ public final class DockerContainer: ContainerRuntimeContainer, @unchecked Sendab
   }
 
   public func stop() async throws {
-    sigwinchSource?.cancel()
+    _sigwinchSource.withLock { source in
+      source?.cancel()
+      source = nil
+    }
     terminalState?.restore()
     attachConnection?.stop()
     try await client.stopContainer(id: id)
@@ -244,7 +248,7 @@ public final class DockerContainer: ContainerRuntimeContainer, @unchecked Sendab
         }
       }
       source.resume()
-      self.sigwinchSource = source
+      self._sigwinchSource.withLock { $0 = source }
     #endif
   }
 }

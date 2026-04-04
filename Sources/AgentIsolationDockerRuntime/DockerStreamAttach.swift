@@ -6,6 +6,7 @@
   import Musl
 #endif
 import Foundation
+import Synchronization
 
 // On Linux (Glibc/Musl), SOCK_STREAM is an enum (__socket_type), not Int32.
 #if canImport(Darwin)
@@ -14,17 +15,21 @@ import Foundation
   private let _SOCK_STREAM = Int32(SOCK_STREAM.rawValue)
 #endif
 
+/// Mutable state protected by a Mutex inside `DockerStreamAttach`.
+private struct AttachState: ~Copyable {
+  var readSource: DispatchSourceRead?
+  var writeSource: DispatchSourceRead?
+  var demuxBuffer = Data()
+}
+
 /// Handles bidirectional I/O with a Docker container via the attach API.
 ///
 /// Uses a raw socket connection (Unix domain or TCP) with HTTP upgrade
 /// to establish a streaming connection for stdin/stdout/stderr.
-final class DockerStreamAttach: @unchecked Sendable {
+final class DockerStreamAttach: Sendable {
   private let fd: Int32
   private let tty: Bool
-  private var readSource: DispatchSourceRead?
-  private var writeSource: DispatchSourceRead?
-  private var demuxBuffer = Data()
-  private let lock = NSLock()
+  private let state = Mutex(AttachState())
 
   private init(fd: Int32, tty: Bool) {
     self.fd = fd
@@ -84,11 +89,9 @@ final class DockerStreamAttach: @unchecked Sendable {
     }
     socketReadSource.setCancelHandler { [weak self] in
       guard let self = self else { return }
-      self.lock.lock()
-      self.readSource = nil
-      self.lock.unlock()
+      self.state.withLock { $0.readSource = nil }
     }
-    self.readSource = socketReadSource
+    self.state.withLock { $0.readSource = socketReadSource }
     socketReadSource.resume()
 
     // stdin -> socket
@@ -109,22 +112,20 @@ final class DockerStreamAttach: @unchecked Sendable {
     }
     stdinReadSource.setCancelHandler { [weak self] in
       guard let self = self else { return }
-      self.lock.lock()
-      self.writeSource = nil
-      self.lock.unlock()
+      self.state.withLock { $0.writeSource = nil }
     }
-    self.writeSource = stdinReadSource
+    self.state.withLock { $0.writeSource = stdinReadSource }
     stdinReadSource.resume()
   }
 
   /// Stop the I/O and close the socket.
   func stop() {
-    lock.lock()
-    readSource?.cancel()
-    readSource = nil
-    writeSource?.cancel()
-    writeSource = nil
-    lock.unlock()
+    state.withLock { state in
+      state.readSource?.cancel()
+      state.readSource = nil
+      state.writeSource?.cancel()
+      state.writeSource = nil
+    }
     close(fd)
   }
 
@@ -135,30 +136,30 @@ final class DockerStreamAttach: @unchecked Sendable {
   /// Each frame has an 8-byte header: [type:1][padding:3][size:4_be]
   /// Type: 0=stdin, 1=stdout, 2=stderr
   private func demuxWrite(_ data: Data, stdout: FileHandle, stderr: FileHandle) {
-    lock.lock()
-    demuxBuffer.append(data)
+    state.withLock { state in
+      state.demuxBuffer.append(data)
 
-    while demuxBuffer.count >= 8 {
-      let streamType = demuxBuffer[0]
-      let size =
-        Int(demuxBuffer[4]) << 24 | Int(demuxBuffer[5]) << 16
-        | Int(demuxBuffer[6]) << 8 | Int(demuxBuffer[7])
+      while state.demuxBuffer.count >= 8 {
+        let streamType = state.demuxBuffer[0]
+        let size =
+          Int(state.demuxBuffer[4]) << 24 | Int(state.demuxBuffer[5]) << 16
+          | Int(state.demuxBuffer[6]) << 8 | Int(state.demuxBuffer[7])
 
-      guard demuxBuffer.count >= 8 + size else { break }
+        guard state.demuxBuffer.count >= 8 + size else { break }
 
-      let payload = demuxBuffer[8..<(8 + size)]
-      switch streamType {
-      case 1:
-        stdout.write(Data(payload))
-      case 2:
-        stderr.write(Data(payload))
-      default:
-        break
+        let payload = state.demuxBuffer[8..<(8 + size)]
+        switch streamType {
+        case 1:
+          stdout.write(Data(payload))
+        case 2:
+          stderr.write(Data(payload))
+        default:
+          break
+        }
+
+        state.demuxBuffer = Data(state.demuxBuffer[(8 + size)...])
       }
-
-      demuxBuffer = Data(demuxBuffer[(8 + size)...])
     }
-    lock.unlock()
   }
 
   // MARK: - HTTP Upgrade
@@ -207,7 +208,7 @@ final class DockerStreamAttach: @unchecked Sendable {
         if let headerEnd = str.range(of: "\r\n\r\n") {
           let headerSize = str.distance(from: str.startIndex, to: headerEnd.upperBound)
           if responseData.count > headerSize {
-            demuxBuffer.append(responseData[headerSize...])
+            state.withLock { $0.demuxBuffer.append(responseData[headerSize...]) }
           }
         }
         return
