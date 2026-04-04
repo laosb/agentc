@@ -1,5 +1,10 @@
 import AgentIsolation
-import AgentIsolationAppleContainerRuntime
+#if ContainerRuntimeAppleContainer
+  import AgentIsolationAppleContainerRuntime
+#endif
+#if ContainerRuntimeDocker
+  import AgentIsolationDockerRuntime
+#endif
 import ArgumentParser
 import Foundation
 import Logging
@@ -65,33 +70,18 @@ struct ClaudecCommand: AsyncParsableCommand {
 
     let allocateTTY = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
 
-    // ── Set up runtime ─────────────────────────────────────────────────
+    // ── Resolve container runtime ──────────────────────────────────────
+    let runtimeName = resolveRuntimeName(env: env)
+    let dockerEndpoint = env["CLAUDEC_DOCKER_ENDPOINT"]
+
+    // ── Set up runtime and run ─────────────────────────────────────────
     let storagePath =
       FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
       .first!
       .appendingPathComponent("com.apple.claudec")
       .path
 
-    let runtimeConfig = ContainerRuntimeConfiguration(storagePath: storagePath)
-    let runtime = AppleContainerRuntime(config: runtimeConfig)
-
-    // ── Auto-update image ──────────────────────────────────────────────
-    let autoUpdate = env["CLAUDEC_IMAGE_AUTO_UPDATE"].map { $0 != "0" } ?? true
-    let removeOldImage = env["CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD"].map { $0 != "0" } ?? true
-    if autoUpdate {
-      try await runtime.prepare()
-      let oldImage = try? await runtime.inspectImage(ref: image)
-      let newImage = try? await runtime.pullImage(ref: image)
-      if let old = oldImage, let new = newImage, old.digest != new.digest {
-        print("claudec: loaded newer image for \(image)")
-        if removeOldImage {
-          try? await runtime.removeImage(digest: old.digest)
-        }
-      }
-    }
-
-    // ── Run container via AgentSession ─────────────────────────────────
-    let config = IsolationConfig(
+    let isolationConfig = IsolationConfig(
       image: image,
       profileHomeDir: profileDir.appending(path: "home"),
       workspace: workspace,
@@ -101,9 +91,80 @@ struct ClaudecCommand: AsyncParsableCommand {
       allocateTTY: allocateTTY
     )
 
-    let session = AgentSession(config: config, runtime: runtime)
-    let exitCode = try await session.run()
+    let autoUpdate = env["CLAUDEC_IMAGE_AUTO_UPDATE"].map { $0 != "0" } ?? true
+    let removeOldImage = env["CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD"].map { $0 != "0" } ?? true
+
+    let exitCode: Int32
+
+    switch runtimeName {
+    #if ContainerRuntimeAppleContainer
+      case "apple-container":
+        let runtimeConfig = ContainerRuntimeConfiguration(storagePath: storagePath)
+        let runtime = AppleContainerRuntime(config: runtimeConfig)
+        if autoUpdate {
+          try await runtime.prepare()
+          let oldImage = try? await runtime.inspectImage(ref: image)
+          let newImage = try? await runtime.pullImage(ref: image)
+          if let old = oldImage, let new = newImage, old.digest != new.digest {
+            print("claudec: loaded newer image for \(image)")
+            if removeOldImage {
+              try? await runtime.removeImage(digest: old.digest)
+            }
+          }
+        }
+        let session = AgentSession(config: isolationConfig, runtime: runtime)
+        exitCode = try await session.run()
+    #endif
+    #if ContainerRuntimeDocker
+      case "docker":
+        let runtimeConfig = ContainerRuntimeConfiguration(
+          storagePath: storagePath, endpoint: dockerEndpoint)
+        let runtime = DockerRuntime(config: runtimeConfig)
+        if autoUpdate {
+          try await runtime.prepare()
+          let oldImage = try? await runtime.inspectImage(ref: image)
+          let newImage = try? await runtime.pullImage(ref: image)
+          if let old = oldImage, let new = newImage, old.digest != new.digest {
+            print("claudec: loaded newer image for \(image)")
+            if removeOldImage {
+              try? await runtime.removeImage(digest: old.digest)
+            }
+          }
+        }
+        let session = AgentSession(config: isolationConfig, runtime: runtime)
+        exitCode = try await session.run()
+    #endif
+    default:
+      fatalError(
+        "claudec: runtime '\(runtimeName)' is not available. "
+          + "Rebuild with the appropriate ContainerRuntime* trait enabled."
+      )
+    }
+
     throw ExitCode(exitCode)
+  }
+
+  /// Determine which container runtime to use based on env var and platform defaults.
+  private func resolveRuntimeName(env: [String: String]) -> String {
+    if let explicit = env["CLAUDEC_CONTAINER_RUNTIME"], !explicit.isEmpty {
+      return explicit
+    }
+
+    #if os(macOS)
+      #if ContainerRuntimeAppleContainer
+        return "apple-container"
+      #elseif ContainerRuntimeDocker
+        return "docker"
+      #else
+        fatalError("claudec: no container runtime available. Build with a ContainerRuntime* trait.")
+      #endif
+    #else
+      #if ContainerRuntimeDocker
+        return "docker"
+      #else
+        fatalError("claudec: no container runtime available. Build with a ContainerRuntime* trait.")
+      #endif
+    #endif
   }
 }
 

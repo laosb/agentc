@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.1
 import PackageDescription
 
 let package = Package(
@@ -11,6 +11,17 @@ let package = Package(
     .library(
       name: "AgentIsolationDockerRuntime", targets: ["AgentIsolationDockerRuntime"]),
     .executable(name: "claudec", targets: ["claudec"]),
+  ],
+  traits: [
+    .default(enabledTraits: ["ContainerRuntimeAppleContainer", "ContainerRuntimeDocker"]),
+    .trait(
+      name: "ContainerRuntimeAppleContainer",
+      description: "Apple Containerization runtime (macOS only)"
+    ),
+    .trait(
+      name: "ContainerRuntimeDocker",
+      description: "Docker Engine runtime (macOS & Linux)"
+    ),
   ],
   dependencies: [
     .package(url: "https://github.com/apple/containerization.git", from: "0.29.0"),
@@ -46,8 +57,8 @@ let package = Package(
       name: "claudec",
       dependencies: [
         "AgentIsolation",
-        "AgentIsolationAppleContainerRuntime",
-        "AgentIsolationDockerRuntime",
+        .target(name: "AgentIsolationAppleContainerRuntime", condition: .when(traits: ["ContainerRuntimeAppleContainer"])),
+        .target(name: "AgentIsolationDockerRuntime", condition: .when(traits: ["ContainerRuntimeDocker"])),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Logging", package: "swift-log"),
       ]
