@@ -101,6 +101,7 @@ struct ClaudecCommand: AsyncParsableCommand {
       case "apple-container":
         let runtimeConfig = ContainerRuntimeConfiguration(storagePath: storagePath)
         let runtime = AppleContainerRuntime(config: runtimeConfig)
+        defer { Task { try? await runtime.shutdown() } }
         if autoUpdate {
           try await runtime.prepare()
           let oldImage = try? await runtime.inspectImage(ref: image)
@@ -120,6 +121,7 @@ struct ClaudecCommand: AsyncParsableCommand {
         let runtimeConfig = ContainerRuntimeConfiguration(
           storagePath: storagePath, endpoint: dockerEndpoint)
         let runtime = DockerRuntime(config: runtimeConfig)
+        defer { Task { try? await runtime.shutdown() } }
         if autoUpdate {
           try await runtime.prepare()
           let oldImage = try? await runtime.inspectImage(ref: image)

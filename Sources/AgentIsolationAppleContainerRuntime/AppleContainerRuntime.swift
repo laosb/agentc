@@ -172,6 +172,11 @@ public final class AppleContainerRuntime: ContainerRuntime, @unchecked Sendable 
     )
   }
 
+  public func shutdown() async throws {
+    manager = nil
+    imageStore = nil
+  }
+
   public func removeContainer(_ container: AppleContainerContainer) async throws {
     container.terminal?.tryReset()
     try await container.underlyingContainer.stop()

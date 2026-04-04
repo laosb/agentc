@@ -28,6 +28,10 @@ final class DockerAPIClient: Sendable {
     self.httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
   }
 
+  func shutdown() async throws {
+    try await httpClient.shutdown()
+  }
+
   // MARK: - Ping
 
   func ping() async throws {

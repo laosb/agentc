@@ -54,6 +54,16 @@ public protocol ContainerRuntime: Sendable {
 
   /// Remove a container.
   func removeContainer(_ container: Container) async throws
+
+  /// Shut down the runtime, releasing any resources (e.g. HTTP clients, connections).
+  ///
+  /// The default implementation is a no-op. Runtimes that hold persistent connections
+  /// or other resources should override this to perform proper cleanup.
+  func shutdown() async throws
+}
+
+extension ContainerRuntime {
+  public func shutdown() async throws {}
 }
 
 public struct ContainerRuntimeConfiguration: Sendable {

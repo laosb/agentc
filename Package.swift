@@ -68,6 +68,13 @@ let package = Package(
       dependencies: ["AgentIsolation"]
     ),
     .testTarget(
+      name: "AgentIsolationDockerRuntimeTests",
+      dependencies: [
+        "AgentIsolation",
+        .target(name: "AgentIsolationDockerRuntime", condition: .when(traits: ["ContainerRuntimeDocker"])),
+      ]
+    ),
+    .testTarget(
       name: "ClaudecIntegrationTests",
       dependencies: []
     ),

@@ -27,6 +27,11 @@ public final class DockerRuntime: ContainerRuntime, @unchecked Sendable {
     try await client.ping()
   }
 
+  /// Shut down the HTTP client. Call when the runtime is no longer needed.
+  public func shutdown() async throws {
+    try await client.shutdown()
+  }
+
   public func pullImage(ref: String) async throws -> DockerImage? {
     do {
       try await client.pullImage(ref: ref)
