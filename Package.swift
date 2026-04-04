@@ -26,13 +26,16 @@ let package = Package(
   dependencies: [
     .package(url: "https://github.com/apple/containerization.git", from: "0.29.0"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
     .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.23.0"),
   ],
   targets: [
     .target(
       name: "AgentIsolation",
-      dependencies: []
+      dependencies: [
+        .product(name: "Crypto", package: "swift-crypto"),
+      ]
     ),
     .target(
       name: "AgentIsolationAppleContainerRuntime",
@@ -65,7 +68,10 @@ let package = Package(
     ),
     .testTarget(
       name: "AgentIsolationTests",
-      dependencies: ["AgentIsolation"]
+      dependencies: [
+        "AgentIsolation",
+        .product(name: "Crypto", package: "swift-crypto"),
+      ]
     ),
     .testTarget(
       name: "AgentIsolationDockerRuntimeTests",
@@ -76,7 +82,9 @@ let package = Package(
     ),
     .testTarget(
       name: "ClaudecIntegrationTests",
-      dependencies: []
+      dependencies: [
+        .product(name: "Crypto", package: "swift-crypto"),
+      ]
     ),
   ]
 )

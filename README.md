@@ -1,6 +1,8 @@
 # claudec
 
-Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inside an isolated Apple [Containerization](https://apple.github.io/containerization/), container with persistent profiles and per-project memory isolation.
+Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inside an isolated container with persistent profiles and per-project memory isolation.
+
+Supports [Apple Containerization](https://apple.github.io/containerization/) on macOS and Docker on macOS/Linux.
 
 > [!NOTE]
 > If upgrading from the shell script version, see [MIGRATE_TO_V1.md](./MIGRATE_TO_V1.md).
@@ -11,19 +13,30 @@ Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inside an isol
 
 ### Prerequisites
 
-- Apple Silicon Mac
+**macOS (Apple Container runtime):**
+- Apple Silicon or Intel Mac
 - macOS 15+
 
-More platforms are planned for the future. Contributions are welcome!
+**macOS / Linux (Docker runtime):**
+- Docker Engine installed and running
 
 ### From GitHub Releases
 
-Download the latest `claudec-arm64-macos.tar.gz` from [Releases](https://github.com/laosb/claudec/releases), extract, and place the binary on your `$PATH`:
+Download the binary for your platform from [Releases](https://github.com/laosb/claudec/releases):
+
+| Platform | Artifact |
+|---|---|
+| macOS arm64 | `claudec-arm64-macos.tar.gz` |
+| macOS x64 | `claudec-x64-macos.tar.gz` |
+| Linux arm64 | `claudec-arm64-linux.tar.gz` |
+| Linux x64 | `claudec-x64-linux.tar.gz` |
 
 ```sh
-tar xzf claudec-arm64-macos.tar.gz
+tar xzf claudec-<arch>-<os>.tar.gz
 sudo mv claudec /usr/local/bin/
 ```
+
+macOS builds include both Apple Container and Docker runtime support. Linux builds only support Docker as runtime currently. New runtime and platform support is welcome!
 
 ### Build from source
 
@@ -31,7 +44,9 @@ Requires Swift 6.1+ (install via [swiftly](https://swiftlang.github.io/swiftly/)
 
 ```sh
 git clone https://github.com/laosb/claudec.git && cd claudec
-./build.sh          # builds + (ad-hoc) signs with virtualization entitlement
+./build.sh                                    # default runtimes for your platform
+./build.sh --runtimes docker                  # Docker only (macOS or Linux)
+./build.sh --runtimes apple-container,docker  # both (macOS only)
 sudo cp claudec /usr/local/bin/
 ```
 
@@ -73,23 +88,30 @@ Each workspace is mounted at a deterministic path inside the container derived f
 | `CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD` | `1` | Set `0` to keep old image after auto-update pulls a newer one. |
 | `CLAUDEC_EXCLUDE_FOLDERS` | *(empty)* | Comma-separated workspace sub-folders to mask with empty read-only overlays (e.g. `node_modules,.git`). |
 | `CLAUDEC_BOOTSTRAP_SCRIPT` | *(empty)* | Path to a custom entrypoint script, replacing the image default. |
+| `CLAUDEC_CONTAINER_RUNTIME` | *(auto)* | Container runtime: `apple-container` or `docker`. Defaults to `apple-container` on macOS, `docker` on Linux. |
+| `CLAUDEC_DOCKER_ENDPOINT` | `/var/run/docker.sock` | Docker Engine API endpoint. Unix socket path or `tcp://host:port`. Only used with the `docker` runtime. |
 
 ## Architecture
 
 ```
 claudec (CLI)
   └─ AgentIsolation           (runtime-agnostic orchestration)
-  └─ AgentIsolationAppleContainerRuntime  (Apple Containerization backend)
+  └─ AgentIsolationAppleContainerRuntime  (Apple Containerization backend, macOS)
+  └─ AgentIsolationDockerRuntime          (Docker Engine API backend, macOS/Linux)
 ```
 
-`AgentIsolation` has zero third-party dependencies — only Foundation and CryptoKit. Alternative runtime backends (Docker, Podman, etc.) can be added by conforming to the `ContainerRuntime` protocol.
+`AgentIsolation` depends only on Foundation and [swift-crypto](https://github.com/apple/swift-crypto). Runtime backends are conditionally compiled via Swift package traits (`ContainerRuntimeAppleContainer`, `ContainerRuntimeDocker`). At least one runtime must be enabled at build time.
 
 ## Development
 
 ```sh
-swift build                  # debug build
-swift test                   # unit + integration tests (integration needs container CLI + image)
-./build.sh                   # release build + codesign
+swift build                                    # debug build (default traits)
+swift build --traits ContainerRuntimeDocker    # Docker-only build
+swift test                                     # unit + integration tests
+swift test --filter AgentIsolationTests        # unit tests only
+swift test --filter AgentIsolationDockerRuntimeTests  # Docker runtime tests
+./build.sh                                     # release build + codesign (macOS)
+./build.sh --runtimes docker                   # Docker-only release build
 ```
 
 ### Building the container image
