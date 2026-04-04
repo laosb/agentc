@@ -71,7 +71,12 @@ private func sha256Hex(_ string: String) -> String {
 /// Compute the new workspace container path for a given workspace URL.
 private func workspaceContainerPath(for ws: URL) -> String {
   let canonicalPath = ws.resolvingSymlinksInPath().path
-  let resolvedPath = canonicalPath.hasPrefix("/tmp") ? "/private" + canonicalPath : canonicalPath
+  let resolvedPath: String
+  #if os(macOS)
+    resolvedPath = canonicalPath.hasPrefix("/tmp") ? "/private" + canonicalPath : canonicalPath
+  #else
+    resolvedPath = canonicalPath
+  #endif
   let hash = sha256Hex(resolvedPath)
   let folderName = URL(fileURLWithPath: resolvedPath).lastPathComponent
   return "/workspace/\(folderName)-\(String(hash.suffix(10)))"

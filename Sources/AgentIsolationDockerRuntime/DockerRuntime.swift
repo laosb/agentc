@@ -221,7 +221,7 @@ public final class DockerContainer: ContainerRuntimeContainer, @unchecked Sendab
   }
 
   private func setupSIGWINCH() {
-    #if canImport(Darwin) || canImport(Glibc)
+    #if canImport(Darwin) || canImport(Glibc) || canImport(Musl)
       signal(SIGWINCH, SIG_IGN)
       let source = DispatchSource.makeSignalSource(signal: SIGWINCH, queue: .global())
       source.setEventHandler { [weak self] in

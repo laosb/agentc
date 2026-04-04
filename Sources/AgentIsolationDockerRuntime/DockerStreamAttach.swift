@@ -2,8 +2,17 @@
   import Darwin
 #elseif canImport(Glibc)
   import Glibc
+#elseif canImport(Musl)
+  import Musl
 #endif
 import Foundation
+
+// On Linux (Glibc/Musl), SOCK_STREAM is an enum (__socket_type), not Int32.
+#if canImport(Darwin)
+  private let _SOCK_STREAM = SOCK_STREAM
+#else
+  private let _SOCK_STREAM = Int32(SOCK_STREAM.rawValue)
+#endif
 
 /// Handles bidirectional I/O with a Docker container via the attach API.
 ///
@@ -209,7 +218,7 @@ final class DockerStreamAttach: @unchecked Sendable {
   // MARK: - Socket Connection
 
   private static func connectUnixSocket(path: String) throws -> Int32 {
-    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    let fd = socket(AF_UNIX, _SOCK_STREAM, 0)
     guard fd >= 0 else {
       throw DockerRuntimeError.socketError("Failed to create Unix socket: \(errnoString)")
     }
@@ -222,7 +231,7 @@ final class DockerStreamAttach: @unchecked Sendable {
       close(fd)
       throw DockerRuntimeError.socketError("Socket path too long: \(path)")
     }
-    withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
+    _ = withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
       pathBytes.withUnsafeBufferPointer { buf in
         memcpy(ptr, buf.baseAddress!, buf.count)
       }
@@ -245,7 +254,7 @@ final class DockerStreamAttach: @unchecked Sendable {
   private static func connectTCPSocket(host: String, port: Int) throws -> Int32 {
     var hints = addrinfo()
     hints.ai_family = AF_UNSPEC
-    hints.ai_socktype = SOCK_STREAM
+    hints.ai_socktype = _SOCK_STREAM
 
     var result: UnsafeMutablePointer<addrinfo>?
     let status = getaddrinfo(host, String(port), &hints, &result)
@@ -292,7 +301,7 @@ final class DockerStreamAttach: @unchecked Sendable {
 
 /// Saves and restores terminal state for raw mode.
 struct DockerTerminalState {
-  #if canImport(Darwin) || canImport(Glibc)
+  #if canImport(Darwin) || canImport(Glibc) || canImport(Musl)
     private var original: termios
 
     /// Set terminal to raw mode, returning the previous state for restoration.
@@ -315,13 +324,9 @@ struct DockerTerminalState {
 
 /// Get the current terminal window size.
 func dockerTerminalSize() -> (width: Int, height: Int)? {
-  #if canImport(Darwin) || canImport(Glibc)
+  #if canImport(Darwin) || canImport(Glibc) || canImport(Musl)
     var ws = winsize()
-    #if canImport(Darwin)
-      guard ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &ws) == 0 else { return nil }
-    #else
-      guard ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &ws) == 0 else { return nil }
-    #endif
+    guard ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &ws) == 0 else { return nil }
     return (Int(ws.ws_col), Int(ws.ws_row))
   #else
     return nil

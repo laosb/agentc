@@ -1,13 +1,12 @@
 name: Test
 
 on:
-  on:
-    push:
-      branches:
-        - main
-    pull_request:
-      branches:
-        - main
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -43,35 +42,39 @@ jobs:
         run: swift test --traits "${{ matrix.traits }}" --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests'
 
   integration-tests:
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Swift
         uses: SwiftyLab/setup-swift@latest
         with:
           swift-version: "6.3"
 
-      - name: Install container CLI
-        run: brew install container
-
-      - name: Start container system
-        run: container system start --enable-kernel-install
-
       - name: Pull image
-        run: container image pull ghcr.io/laosb/claudec:latest
+        run: docker pull ghcr.io/laosb/claudec:latest
 
-      - name: Build and sign binary
-        run: bash build.sh
+      - name: Build binary
+        run: bash build.sh --runtimes docker
 
       - name: Cache shared test profile
         uses: actions/cache@v4
         with:
           path: ~/.claudec/profiles/__TEST_shared
-          key: claudec-test-profile-${{ hashFiles('bootstrap.sh') }}
+          key: claudec-test-profile-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh') }}
 
       - name: Run integration tests
-        run: swift test --filter ClaudecIntegrationTests
+        run: swift test --traits ContainerRuntimeDocker --filter ClaudecIntegrationTests
         env:
+          CLAUDEC_CONTAINER_RUNTIME: docker
           VERBOSE: 1
