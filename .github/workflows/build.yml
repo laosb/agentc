@@ -1,8 +1,9 @@
 name: Build and Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build:
@@ -34,7 +35,14 @@ jobs:
           tar czf claudec-arm64-macos.tar.gz claudec
           mv claudec-arm64-macos.tar.gz "$GITHUB_WORKSPACE/"
 
-      - name: Upload to release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudec-arm64-macos
+          path: claudec-arm64-macos.tar.gz
+
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: claudec-arm64-macos.tar.gz
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
