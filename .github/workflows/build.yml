@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   build:
@@ -44,5 +44,6 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          draft: true
           files: claudec-arm64-macos.tar.gz
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
