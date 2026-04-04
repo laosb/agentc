@@ -3,13 +3,18 @@
 Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inside an isolated Apple [Containerization](https://apple.github.io/containerization/), container with persistent profiles and per-project memory isolation.
 
 > [!NOTE]
-> If upgrading from the shell-script version, see [MIGRATE_TO_V1.md](./MIGRATE_TO_V1.md).
+> If upgrading from the shell script version, see [MIGRATE_TO_V1.md](./MIGRATE_TO_V1.md).
+>
+> If you want to continue to use the shell script version (though it won't be maintained), see `archive-v0` branch.
 
 ## Install
 
 ### Prerequisites
 
+- Apple Silicon Mac
 - macOS 15+
+
+More platforms are planned for the future. Contributions are welcome!
 
 ### From GitHub Releases
 
@@ -50,7 +55,7 @@ CLAUDEC_PROFILE=work claudec        # use a named profile
 export CLAUDEC_PROFILE=work         # or set for the whole session
 ```
 
-Stored at `~/.claudec/profiles/<name>/home/`.
+Stored at `~/.claudec/profiles/<name>/home/`. You can also use `CLAUDEC_PROFILE_DIR` to specify a custom profile directory path instead.
 
 ### Project memory isolation
 
@@ -92,3 +97,6 @@ swift test                   # unit + integration tests (integration needs conta
 docker build -t claudec .
 CLAUDEC_IMAGE=claudec claudec
 ```
+
+# License
+[MIT License](./LICENSE).
