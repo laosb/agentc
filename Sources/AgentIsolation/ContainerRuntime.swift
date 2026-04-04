@@ -58,9 +58,11 @@ public protocol ContainerRuntime: Sendable {
 
 public struct ContainerRuntimeConfiguration: Sendable {
   public var storagePath: String
+  public var endpoint: String?
 
-  public init(storagePath: String) {
+  public init(storagePath: String, endpoint: String? = nil) {
     self.storagePath = storagePath
+    self.endpoint = endpoint
   }
 }
 
