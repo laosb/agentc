@@ -78,17 +78,22 @@ public struct ContainerRuntimeConfiguration: Sendable {
 
 public struct ContainerConfiguration: Sendable {
   public var entrypoint: [String]
+  /// When true, `entrypoint` replaces the container image's built-in entrypoint.
+  /// When false, `entrypoint` is passed as command/arguments to the image's entrypoint.
+  public var overridesImageEntrypoint: Bool
   public var workingDirectory: String?
   public var mounts: [Mount]
   public var io: IO
 
   public init(
     entrypoint: [String],
+    overridesImageEntrypoint: Bool = false,
     workingDirectory: String? = nil,
     mounts: [Mount] = [],
     io: IO = .currentTerminal
   ) {
     self.entrypoint = entrypoint
+    self.overridesImageEntrypoint = overridesImageEntrypoint
     self.workingDirectory = workingDirectory
     self.mounts = mounts
     self.io = io

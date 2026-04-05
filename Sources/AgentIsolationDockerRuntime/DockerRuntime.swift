@@ -91,10 +91,14 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
       binds.append("\(mount.hostPath):\(mount.containerPath):\(opts)")
     }
 
-    // Create container
+    // Create container – when a custom entrypoint override is requested, set Docker's
+    // Entrypoint field to replace the image's built-in ENTRYPOINT. Otherwise, use Cmd
+    // so the image's ENTRYPOINT receives these as arguments.
+    let entryArgs = configuration.entrypoint.isEmpty ? nil : configuration.entrypoint
     let createConfig = DockerCreateContainerRequest(
       Image: imageRef,
-      Cmd: configuration.entrypoint.isEmpty ? nil : configuration.entrypoint,
+      Entrypoint: configuration.overridesImageEntrypoint ? entryArgs : nil,
+      Cmd: configuration.overridesImageEntrypoint ? nil : entryArgs,
       WorkingDir: configuration.workingDirectory,
       Tty: useTTY,
       OpenStdin: true,

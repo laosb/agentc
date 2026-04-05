@@ -111,6 +111,7 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
 
     let containerConfig = ContainerConfiguration(
       entrypoint: entrypoint,
+      overridesImageEntrypoint: config.bootstrapScript != nil,
       workingDirectory: workspaceContainerPath,
       mounts: mounts,
       io: io

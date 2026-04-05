@@ -25,6 +25,7 @@ struct DockerPullProgress: Codable, Sendable {
 
 struct DockerCreateContainerRequest: Codable, Sendable {
   var Image: String
+  var Entrypoint: [String]?
   var Cmd: [String]?
   var WorkingDir: String?
   var Tty: Bool?
