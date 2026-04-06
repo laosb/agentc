@@ -109,6 +109,11 @@ fi
 BUILD_ARGS=(-c "${CONFIG}" --disable-default-traits --traits "${TRAITS}")
 if [[ -n "${SWIFT_SDK}" ]]; then
     BUILD_ARGS+=(--swift-sdk "${SWIFT_SDK}")
+else
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        # On non-macOS platforms, static link the Swift standard library to ship as a single binary.
+        BUILD_ARGS+=(--static-swift-stdlib)
+    fi
 fi
 swift build "${BUILD_ARGS[@]}"
 
