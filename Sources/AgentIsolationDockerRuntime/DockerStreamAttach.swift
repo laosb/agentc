@@ -9,11 +9,12 @@ import Synchronization
   import Musl
 #endif
 
-// On Linux (Glibc/Musl), SOCK_STREAM is an enum (__socket_type), not Int32.
-#if canImport(Darwin)
-  private let _SOCK_STREAM = SOCK_STREAM
-#else
+// On Glibc, SOCK_STREAM is an enum (__socket_type), not Int32.
+// On Darwin and Musl it is already Int32.
+#if canImport(Glibc)
   private let _SOCK_STREAM = Int32(SOCK_STREAM.rawValue)
+#else
+  private let _SOCK_STREAM = SOCK_STREAM
 #endif
 
 /// Mutable state protected by a Mutex inside `DockerStreamAttach`.

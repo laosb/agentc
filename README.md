@@ -18,18 +18,12 @@ Supports [Apple Containerization](https://apple.github.io/containerization/) on 
 - macOS 15+
 
 **macOS / Linux (Docker runtime):**
-- Docker Engine installed and running
+- x64 or arm64 CPU
+- A container runtime compatible with the Docker Engine API v1.44 (e.g. Docker, Podman with Docker compatibility API service.)
 
 ### From GitHub Releases
 
 Download the binary for your platform from [Releases](https://github.com/laosb/claudec/releases):
-
-| Platform | Artifact |
-|---|---|
-| macOS arm64 | `claudec-arm64-macos.tar.gz` |
-| macOS x64 | `claudec-x64-macos.tar.gz` |
-| Linux arm64 | `claudec-arm64-linux.tar.gz` |
-| Linux x64 | `claudec-x64-linux.tar.gz` |
 
 ```sh
 tar xzf claudec-<arch>-<os>.tar.gz
@@ -38,17 +32,7 @@ sudo mv claudec /usr/local/bin/
 
 macOS builds include both Apple Container and Docker runtime support. Linux builds only support Docker as runtime currently. New runtime and platform support is welcome!
 
-### Build from source
-
-Requires Swift 6.1+ (install via [swiftly](https://swiftlang.github.io/swiftly/)).
-
-```sh
-git clone https://github.com/laosb/claudec.git && cd claudec
-./build.sh                                    # default runtimes for your platform
-./build.sh --runtimes docker                  # Docker only (macOS or Linux)
-./build.sh --runtimes apple-container,docker  # both (macOS only)
-sudo cp claudec /usr/local/bin/
-```
+For Linux environments, the normal build is expected to work on [distros directly supported by Swift](https://www.swift.org/platform-support/). If you are not using these officially supported distros, we also provide a `-static` flavor that have all dependencies statically linked and may have better compatibility.
 
 ## Usage
 
@@ -103,6 +87,10 @@ claudec (CLI)
 `AgentIsolation` depends only on Foundation and [swift-crypto](https://github.com/apple/swift-crypto). Runtime backends are conditionally compiled via Swift package traits (`ContainerRuntimeAppleContainer`, `ContainerRuntimeDocker`). At least one runtime must be enabled at build time.
 
 ## Development
+
+Swift 6.1 or later is required. Tested on Swift 6.3.
+
+Use [`.github/workflows`](./.github/workflows) as a reference for build and test steps.
 
 ```sh
 swift build                                    # debug build (default traits)
