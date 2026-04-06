@@ -2,7 +2,7 @@
 # Build and (on macOS with Apple Container support) sign the claudec binary.
 #
 # Usage:
-#   ./build.sh [--debug] [--runtimes apple-container,docker]
+#   ./build.sh [--debug] [--runtimes apple-container,docker] [--swift-sdk SDK]
 #
 # Options:
 #   --debug           Build in debug mode (default: release)
@@ -10,9 +10,13 @@
 #                     Valid values: apple-container, docker
 #                     Default on macOS: apple-container,docker
 #                     Default on Linux: docker
+#   --swift-sdk SDK   Build using the specified Swift SDK (e.g.
+#                     x86_64-swift-linux-musl, aarch64-swift-linux-musl).
+#                     Used for producing statically linked Linux binaries.
 #
-# On macOS, if apple-container runtime is included, the binary is ad-hoc
-# code-signed with the virtualization entitlement.
+# On macOS, if apple-container runtime is included and no Swift SDK is
+# specified, the binary is ad-hoc code-signed with the virtualization
+# entitlement.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,6 +24,7 @@ ENTITLEMENTS="${SCRIPT_DIR}/signing/claudec.entitlements"
 
 CONFIG="release"
 RUNTIMES=""
+SWIFT_SDK=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -33,6 +38,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --runtimes=*)
             RUNTIMES="${1#*=}"
+            shift
+            ;;
+        --swift-sdk)
+            SWIFT_SDK="$2"
+            shift 2
+            ;;
+        --swift-sdk=*)
+            SWIFT_SDK="${1#*=}"
             shift
             ;;
         *)
@@ -89,13 +102,24 @@ fi
 
 echo "Building claudec (${CONFIG}) with runtimes: ${RUNTIMES}..."
 echo "  Traits: ${TRAITS}"
+if [[ -n "${SWIFT_SDK}" ]]; then
+    echo "  Swift SDK: ${SWIFT_SDK}"
+fi
 
-swift build -c "${CONFIG}" --disable-default-traits --traits "${TRAITS}"
+BUILD_ARGS=(-c "${CONFIG}" --disable-default-traits --traits "${TRAITS}")
+if [[ -n "${SWIFT_SDK}" ]]; then
+    BUILD_ARGS+=(--swift-sdk "${SWIFT_SDK}")
+fi
+swift build "${BUILD_ARGS[@]}"
 
-BUILT_BINARY="${SCRIPT_DIR}/.build/${CONFIG}/claudec"
+if [[ -n "${SWIFT_SDK}" ]]; then
+    BUILT_BINARY="${SCRIPT_DIR}/.build/${SWIFT_SDK}/${CONFIG}/claudec"
+else
+    BUILT_BINARY="${SCRIPT_DIR}/.build/${CONFIG}/claudec"
+fi
 OUTPUT_BINARY="${SCRIPT_DIR}/claudec"
 
-if [[ "${NEED_SIGN}" == true ]] && [[ "$(uname -s)" == "Darwin" ]]; then
+if [[ "${NEED_SIGN}" == true ]] && [[ "$(uname -s)" == "Darwin" ]] && [[ -z "${SWIFT_SDK}" ]]; then
     echo "Signing with virtualization entitlement..."
     codesign --sign - --entitlements "${ENTITLEMENTS}" --force "${BUILT_BINARY}"
 fi

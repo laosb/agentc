@@ -27,6 +27,16 @@ jobs:
             arch: arm64
             runtimes: docker
             artifact: claudec-arm64-linux
+          - os: ubuntu-24.04
+            arch: x64
+            runtimes: docker
+            artifact: claudec-x64-linux-static
+            swift-sdk: x86_64-swift-linux-musl
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            runtimes: docker
+            artifact: claudec-arm64-linux-static
+            swift-sdk: aarch64-swift-linux-musl
 
     runs-on: ${{ matrix.os }}
     permissions:
@@ -41,14 +51,19 @@ jobs:
         with:
           swift-version: "6.3"
 
+      - name: Install Static Linux SDK
+        if: matrix.swift-sdk
+        run: swift sdk install https://download.swift.org/swift-6.3-release/static-sdk/swift-6.3-RELEASE/swift-6.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz --checksum d2078b69bdeb5c31202c10e9d8a11d6f66f82938b51a4b75f032ccb35c4c286c
+
       - name: Build release binary
-        run: bash build.sh --runtimes "${{ matrix.runtimes }}"
+        run: bash build.sh --runtimes "${{ matrix.runtimes }}"${{ matrix.swift-sdk && format(' --swift-sdk {0}', matrix.swift-sdk) || '' }}
+
+      - name: Verify static linking
+        if: matrix.swift-sdk
+        run: file ./claudec | tee /dev/stderr | grep -q "statically linked"
 
       - name: Package binary
-        run: |
-          cd .build/release
-          tar czf "${{ matrix.artifact }}.tar.gz" claudec
-          mv "${{ matrix.artifact }}.tar.gz" "$GITHUB_WORKSPACE/"
+        run: tar czf "${{ matrix.artifact }}.tar.gz" claudec
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

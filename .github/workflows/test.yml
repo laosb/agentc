@@ -78,3 +78,49 @@ jobs:
         env:
           CLAUDEC_CONTAINER_RUNTIME: docker
           VERBOSE: 1
+
+  integration-tests-static:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x64
+            swift-sdk: x86_64-swift-linux-musl
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            swift-sdk: aarch64-swift-linux-musl
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Swift
+        uses: SwiftyLab/setup-swift@latest
+        with:
+          swift-version: "6.3"
+
+      - name: Install Static Linux SDK
+        run: swift sdk install https://download.swift.org/swift-6.3-release/static-sdk/swift-6.3-RELEASE/swift-6.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz --checksum d2078b69bdeb5c31202c10e9d8a11d6f66f82938b51a4b75f032ccb35c4c286c
+
+      - name: Pull image
+        run: docker pull ghcr.io/laosb/claudec:latest
+
+      - name: Build static binary
+        run: bash build.sh --runtimes docker --swift-sdk ${{ matrix.swift-sdk }}
+
+      - name: Verify static linking
+        run: file ./claudec | tee /dev/stderr | grep -q "statically linked"
+
+      - name: Cache shared test profile
+        uses: actions/cache@v4
+        with:
+          path: ~/.claudec/profiles/__TEST_shared
+          key: claudec-test-profile-static-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh') }}
+
+      - name: Run integration tests
+        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter ClaudecIntegrationTests
+        env:
+          CLAUDEC_CONTAINER_RUNTIME: docker
+          VERBOSE: 1
