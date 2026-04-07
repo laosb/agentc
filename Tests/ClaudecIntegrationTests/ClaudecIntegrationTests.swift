@@ -14,7 +14,10 @@ import Testing
 
 struct ProcessOutput: Sendable {
   let exitCode: Int32
-  let output: String
+  let stdout: String
+  let stderr: String
+  /// Combined stdout + stderr for convenience.
+  var output: String { stdout + stderr }
 }
 
 private func runClaudec(
@@ -43,21 +46,25 @@ private func runClaudec(
     process.arguments = arguments
     process.environment = environment
 
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = pipe
+    let stdoutPipe = Pipe()
+    let stderrPipe = Pipe()
+    process.standardOutput = stdoutPipe
+    process.standardError = stderrPipe
 
     process.terminationHandler = { p in
-      let data = pipe.fileHandleForReading.readDataToEndOfFile()
-      let output = String(data: data, encoding: .utf8) ?? ""
+      let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+      let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+      let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+      let stderr = String(data: stderrData, encoding: .utf8) ?? ""
       continuation.resume(
-        returning: ProcessOutput(exitCode: p.terminationStatus, output: output))
+        returning: ProcessOutput(exitCode: p.terminationStatus, stdout: stdout, stderr: stderr))
     }
 
     do {
       try process.run()
     } catch {
-      continuation.resume(returning: ProcessOutput(exitCode: -1, output: "launch error: \(error)"))
+      continuation.resume(
+        returning: ProcessOutput(exitCode: -1, stdout: "", stderr: "launch error: \(error)"))
     }
   }
 }
@@ -256,7 +263,7 @@ struct ClaudecIntegrationTests {
       arguments: ["sh", "ls", "\(containerPath)/secret"]
     )
     #expect(result.exitCode == 0)
-    #expect(result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
   }
 
   @Test("CLAUDEC_EXCLUDE_FOLDERS hides multiple comma-separated folders")
@@ -294,8 +301,8 @@ struct ClaudecIntegrationTests {
 
     #expect(resultA.exitCode == 0)
     #expect(resultB.exitCode == 0)
-    #expect(resultA.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    #expect(resultB.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    #expect(resultA.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    #expect(resultB.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
   }
 
   @Test("CLAUDEC_BOOTSTRAP_SCRIPT overrides bootstrap in container")
@@ -352,7 +359,185 @@ struct ClaudecIntegrationTests {
         arguments: ["sh", "echo", "should-not-run"]
       )
       #expect(result.exitCode != 0, "\(envVar) should cause error")
-      #expect(result.output.contains("not supported"), "\(envVar) should mention unsupported")
+      #expect(result.stderr.contains("not supported"), "\(envVar) should mention unsupported")
     }
+  }
+}
+
+// MARK: - Configuration Repo Tests
+
+/// Creates a local git repo mimicking agent-isolation-configurations with a
+/// minimal `claude` configuration (no-op prepare, no additional bin paths).
+private func createLocalConfigRepo(at repoDir: URL) throws {
+  let fm = FileManager.default
+  let claudeDir = repoDir.appendingPathComponent("claude")
+  try fm.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+  try """
+  {"v":0,"dependsOn":[],"additionalMounts":[],"additionalBinPaths":[],"entrypoint":["echo","config-ok"]}
+  """.write(to: claudeDir.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
+  try "#!/bin/bash\n".write(
+    to: claudeDir.appendingPathComponent("prepare.sh"), atomically: true, encoding: .utf8)
+
+  for args: [String] in [
+    ["init"],
+    ["add", "."],
+    ["-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "init"],
+  ] {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["-C", repoDir.path] + args
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+      fatalError("git \(args.joined(separator: " ")) failed in createLocalConfigRepo")
+    }
+  }
+}
+
+@Suite("Configuration Repo Integration Tests")
+struct ConfigurationRepoIntegrationTests {
+
+  @Test("Configurations repo is cloned on first run")
+  func configurationsClone() async throws {
+    let tempDir = URL(fileURLWithPath: "/tmp/__TEST_cfg_clone.\(UUID().uuidString.prefix(6))")
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let fakeHome = tempDir.appendingPathComponent("fakehome")
+    let profileDir = tempDir.appendingPathComponent("profile")
+    let localRepo = tempDir.appendingPathComponent("repo")
+
+    try FileManager.default.createDirectory(at: fakeHome, withIntermediateDirectories: true)
+    try stubProfileHome(at: profileDir.appendingPathComponent("home"))
+    try createLocalConfigRepo(at: localRepo)
+
+    let result = await runClaudec(
+      env: [
+        "HOME": fakeHome.path,
+        "CLAUDEC_PROFILE_DIR": profileDir.path,
+        "CLAUDEC_CONFIGURATIONS_REPO": localRepo.path,
+        "CLAUDEC_BOOTSTRAP_SCRIPT": bootstrapScriptPath,
+      ],
+      arguments: ["sh", "echo", "ok"]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stderr.contains("cloning configurations repo"))
+    #expect(result.stdout.contains("ok"))
+    let clonedGit = fakeHome.appendingPathComponent(".claudec/configurations/.git")
+    #expect(FileManager.default.fileExists(atPath: clonedGit.path))
+  }
+
+  @Test("Configurations repo is not re-cloned on subsequent runs")
+  func configurationsNoReClone() async throws {
+    let tempDir = URL(fileURLWithPath: "/tmp/__TEST_cfg_noclone.\(UUID().uuidString.prefix(6))")
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let fakeHome = tempDir.appendingPathComponent("fakehome")
+    let profileDir = tempDir.appendingPathComponent("profile")
+    let localRepo = tempDir.appendingPathComponent("repo")
+
+    try FileManager.default.createDirectory(at: fakeHome, withIntermediateDirectories: true)
+    try stubProfileHome(at: profileDir.appendingPathComponent("home"))
+    try createLocalConfigRepo(at: localRepo)
+
+    let baseEnv: [String: String] = [
+      "HOME": fakeHome.path,
+      "CLAUDEC_PROFILE_DIR": profileDir.path,
+      "CLAUDEC_CONFIGURATIONS_REPO": localRepo.path,
+      "CLAUDEC_BOOTSTRAP_SCRIPT": bootstrapScriptPath,
+    ]
+
+    // First run — should clone
+    let result1 = await runClaudec(env: baseEnv, arguments: ["sh", "echo", "first"])
+    #expect(result1.exitCode == 0)
+    #expect(result1.stderr.contains("cloning configurations repo"))
+
+    // Second run — should NOT clone
+    let result2 = await runClaudec(env: baseEnv, arguments: ["sh", "echo", "second"])
+    #expect(result2.exitCode == 0)
+    #expect(!result2.stderr.contains("cloning configurations repo"))
+    #expect(result2.stdout.contains("second"))
+  }
+
+  @Test("Stale marker triggers update pull without re-clone")
+  func configurationsStaleUpdate() async throws {
+    let tempDir = URL(fileURLWithPath: "/tmp/__TEST_cfg_stale.\(UUID().uuidString.prefix(6))")
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let fakeHome = tempDir.appendingPathComponent("fakehome")
+    let profileDir = tempDir.appendingPathComponent("profile")
+    let localRepo = tempDir.appendingPathComponent("repo")
+
+    try FileManager.default.createDirectory(at: fakeHome, withIntermediateDirectories: true)
+    try stubProfileHome(at: profileDir.appendingPathComponent("home"))
+    try createLocalConfigRepo(at: localRepo)
+
+    let baseEnv: [String: String] = [
+      "HOME": fakeHome.path,
+      "CLAUDEC_PROFILE_DIR": profileDir.path,
+      "CLAUDEC_CONFIGURATIONS_REPO": localRepo.path,
+      "CLAUDEC_BOOTSTRAP_SCRIPT": bootstrapScriptPath,
+    ]
+
+    // First run — clones
+    let result1 = await runClaudec(env: baseEnv, arguments: ["sh", "echo", "ok"])
+    #expect(result1.exitCode == 0)
+
+    // Make the marker file look stale (2 days old)
+    let configsDir = fakeHome.appendingPathComponent(".claudec/configurations")
+    let markerPath = configsDir.appendingPathComponent(".claudec-last-pull")
+    // Create marker (clone doesn't create one, first pull will)
+    FileManager.default.createFile(atPath: markerPath.path, contents: nil)
+    let staleDate = Date().addingTimeInterval(-200_000)
+    try FileManager.default.setAttributes(
+      [.modificationDate: staleDate], ofItemAtPath: markerPath.path)
+
+    // Run with interval=0 to force update check
+    var envWithInterval = baseEnv
+    envWithInterval["CLAUDEC_CONFIGURATIONS_UPDATE_INTERVAL_SECONDS"] = "0"
+    let result2 = await runClaudec(env: envWithInterval, arguments: ["sh", "echo", "updated"])
+    #expect(result2.exitCode == 0)
+    // Should NOT re-clone, just pull
+    #expect(!result2.stderr.contains("cloning configurations repo"))
+    #expect(result2.stdout.contains("updated"))
+
+    // Marker should be refreshed (recent mtime)
+    if let attrs = try? FileManager.default.attributesOfItem(atPath: markerPath.path),
+      let mtime = attrs[.modificationDate] as? Date
+    {
+      #expect(Date().timeIntervalSince(mtime) < 60, "Marker should be freshly updated")
+    }
+  }
+
+  @Test("CLAUDEC_CONFIGURATIONS_REPO overrides clone source")
+  func configurationsCustomRepo() async throws {
+    let tempDir = URL(fileURLWithPath: "/tmp/__TEST_cfg_repo.\(UUID().uuidString.prefix(6))")
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let fakeHome = tempDir.appendingPathComponent("fakehome")
+    let profileDir = tempDir.appendingPathComponent("profile")
+    let localRepo = tempDir.appendingPathComponent("custom-repo")
+
+    try FileManager.default.createDirectory(at: fakeHome, withIntermediateDirectories: true)
+    try stubProfileHome(at: profileDir.appendingPathComponent("home"))
+    try createLocalConfigRepo(at: localRepo)
+
+    let result = await runClaudec(
+      env: [
+        "HOME": fakeHome.path,
+        "CLAUDEC_PROFILE_DIR": profileDir.path,
+        "CLAUDEC_CONFIGURATIONS_REPO": localRepo.path,
+        "CLAUDEC_BOOTSTRAP_SCRIPT": bootstrapScriptPath,
+      ],
+      arguments: ["sh", "echo", "custom-ok"]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout.contains("custom-ok"))
+    // Verify the configurations dir was created from the custom repo
+    let clonedSettings = fakeHome.appendingPathComponent(
+      ".claudec/configurations/claude/settings.json")
+    #expect(FileManager.default.fileExists(atPath: clonedSettings.path))
   }
 }

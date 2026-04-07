@@ -32,7 +32,7 @@ for config_name in "${CONFIG_NAMES[@]}"; do
     # Run prepare.sh if it exists
     prepare_script="${config_dir}/prepare.sh"
     if [ -f "$prepare_script" ]; then
-        echo "==> Running prepare.sh for configuration '${config_name}'..."
+        echo "==> Running prepare.sh for configuration '${config_name}'..." >&2
         if ! bash "$prepare_script"; then
             echo "claudec: prepare.sh failed for configuration '${config_name}'" >&2
             exit 1
