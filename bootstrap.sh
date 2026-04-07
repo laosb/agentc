@@ -22,6 +22,9 @@ for config_name in "${CONFIG_NAMES[@]}"; do
         exit 1
     fi
 
+    # Most user-local binaries are expected to be in ~/.local/bin, so add that to PATH by default
+    export PATH="${HOME}/.local/bin:${PATH}"
+
     # Add additionalBinPaths to PATH
     while IFS= read -r bin_path; do
         # Expand $HOME in paths
