@@ -136,8 +136,20 @@ struct ClaudecCommand: AsyncParsableCommand {
     let storagePath =
       FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
       .first!
+      .appendingPathComponent("sb.lao.agentc")
+      .path
+
+    // If there's no sb.lao.agentc but there's an old (accidental) com.apple.claudec, migrate it to avoid confusion.
+    let oldStoragePath =
+      FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+      .first!
       .appendingPathComponent("com.apple.claudec")
       .path
+    if !FileManager.default.fileExists(atPath: storagePath),
+      FileManager.default.fileExists(atPath: oldStoragePath)
+    {
+      try FileManager.default.moveItem(atPath: oldStoragePath, toPath: storagePath)
+    }
 
     let isolationConfig = IsolationConfig(
       image: image,
