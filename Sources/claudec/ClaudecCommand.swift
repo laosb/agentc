@@ -1,13 +1,14 @@
 import AgentIsolation
+import ArgumentParser
+import Foundation
+import Logging
+
 #if ContainerRuntimeAppleContainer
   import AgentIsolationAppleContainerRuntime
 #endif
 #if ContainerRuntimeDocker
   import AgentIsolationDockerRuntime
 #endif
-import ArgumentParser
-import Foundation
-import Logging
 
 /// Settings from a claudec profile's settings.json.
 private struct ProfileSettings: Decodable {

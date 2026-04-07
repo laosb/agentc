@@ -92,7 +92,8 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     }
 
     // Build environment
-    let envVars: [String]? = configuration.environment.isEmpty
+    let envVars: [String]? =
+      configuration.environment.isEmpty
       ? nil
       : configuration.environment.map { "\($0.key)=\($0.value)" }
 

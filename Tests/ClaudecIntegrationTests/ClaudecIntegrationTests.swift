@@ -375,7 +375,8 @@ private func createLocalConfigRepo(at repoDir: URL) throws {
 
   try """
   {"v":0,"dependsOn":[],"additionalMounts":[],"additionalBinPaths":[],"entrypoint":["echo","config-ok"]}
-  """.write(to: claudeDir.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
+  """.write(
+    to: claudeDir.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
   try "#!/bin/bash\n".write(
     to: claudeDir.appendingPathComponent("prepare.sh"), atomically: true, encoding: .utf8)
 
@@ -424,8 +425,9 @@ struct ConfigurationRepoIntegrationTests {
     #expect(result.exitCode == 0)
     #expect(result.stderr.contains("cloning configurations repo"))
     #expect(result.stdout.contains("ok"))
-    #expect(FileManager.default.fileExists(
-      atPath: configsDir.appendingPathComponent(".git").path))
+    #expect(
+      FileManager.default.fileExists(
+        atPath: configsDir.appendingPathComponent(".git").path))
   }
 
   @Test("Configurations repo is not re-cloned on subsequent runs")

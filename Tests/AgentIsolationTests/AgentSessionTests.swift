@@ -814,7 +814,8 @@ struct ConfigurationTests {
 
     // Verify the host directory was actually created
     let expectedSegment = pathSegment(for: "/data/persistent")
-    let expectedHostDir = base
+    let expectedHostDir =
+      base
       .appendingPathComponent("additionalMounts")
       .appendingPathComponent(expectedSegment)
     var isDir: ObjCBool = false
