@@ -78,8 +78,13 @@ struct ClaudecCommand: AsyncParsableCommand {
     let allocateTTY = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
 
     // ── Manage configurations repo ─────────────────────────────────────
-    let home = URL(fileURLWithPath: NSHomeDirectory())
-    let configurationsDir = home.appending(path: ".claudec").appending(path: "configurations")
+    let configurationsDir: URL
+    if let customDir = env["CLAUDEC_CONFIGURATIONS_DIR"], !customDir.isEmpty {
+      configurationsDir = URL(fileURLWithPath: customDir)
+    } else {
+      let home = URL(fileURLWithPath: NSHomeDirectory())
+      configurationsDir = home.appending(path: ".claudec").appending(path: "configurations")
+    }
     try ensureConfigurationsRepo(at: configurationsDir, env: env)
 
     // ── Resolve configurations list ────────────────────────────────────

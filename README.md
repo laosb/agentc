@@ -69,6 +69,7 @@ Each workspace is mounted at a deterministic path inside the container derived f
 | `CLAUDEC_IMAGE` | `ghcr.io/laosb/claudec:latest` | Container image reference. |
 | `CLAUDEC_WORKSPACE` | `$PWD` | Host directory mounted as the workspace. |
 | `CLAUDEC_CONFIGURATIONS` | *(from profile settings or `claude`)* | Comma-separated list of agent configuration names to activate. |
+| `CLAUDEC_CONFIGURATIONS_DIR` | `~/.claudec/configurations` | Path to the local configurations directory. Overrides the default. |
 | `CLAUDEC_CONFIGURATIONS_REPO` | `https://github.com/laosb/agent-isolation-configurations` | Git repo URL for agent configurations. |
 | `CLAUDEC_CONFIGURATIONS_UPDATE_INTERVAL_SECONDS` | `86400` | Seconds between configuration repo update checks. |
 | `CLAUDEC_IMAGE_AUTO_UPDATE` | `1` | Set `0` to skip pulling latest image before each run. |
