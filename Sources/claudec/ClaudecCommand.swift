@@ -226,19 +226,36 @@ struct ClaudecCommand: AsyncParsableCommand {
   // MARK: - Configurations Repo Management
 
   /// Ensure the configurations repo is cloned and up-to-date.
+  ///
+  /// Uses advisory file locking (`flock`) to prevent concurrent processes from
+  /// racing on clone or pull operations.
   private func ensureConfigurationsRepo(at dir: URL, env: [String: String]) throws {
     let repoURL =
       env["CLAUDEC_CONFIGURATIONS_REPO"]
       ?? "https://github.com/laosb/agent-isolation-configurations"
     let updateInterval = Int(env["CLAUDEC_CONFIGURATIONS_UPDATE_INTERVAL_SECONDS"] ?? "") ?? 86400
 
+    let parentDir = dir.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
+
+    // Acquire an exclusive file lock so parallel claudec processes don't race.
+    let lockPath = parentDir.appendingPathComponent(".configurations.lock").path
+    let lockFD = open(lockPath, O_RDWR | O_CREAT, 0o644)
+    guard lockFD >= 0 else {
+      throw ClaudecError.configRepoError("Failed to create configurations lock file")
+    }
+    defer {
+      flock(lockFD, LOCK_UN)
+      close(lockFD)
+    }
+    guard flock(lockFD, LOCK_EX) == 0 else {
+      throw ClaudecError.configRepoError("Failed to acquire configurations lock")
+    }
+
     let gitDir = dir.appendingPathComponent(".git")
 
     if !FileManager.default.fileExists(atPath: gitDir.path) {
-      // Clone the repo
-      try FileManager.default.createDirectory(
-        at: dir.deletingLastPathComponent(), withIntermediateDirectories: true)
-      // Remove dir if it exists but isn't a git repo
+      // Remove dir if it exists but isn't a valid git repo
       if FileManager.default.fileExists(atPath: dir.path) {
         try FileManager.default.removeItem(at: dir)
       }

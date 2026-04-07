@@ -41,7 +41,36 @@ jobs:
       - name: Run unit tests
         run: swift test --disable-default-traits --traits "${{ matrix.traits }}" --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests'
 
+  build-test-image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build base image
+        run: docker build -t ghcr.io/laosb/claudec:latest .
+
+      - name: Export image
+        run: docker save ghcr.io/laosb/claudec:latest | gzip > claudec-image.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claudec-image-${{ matrix.arch }}
+          path: claudec-image.tar.gz
+          retention-days: 1
+
   integration-tests:
+    needs: build-test-image
     strategy:
       fail-fast: false
       matrix:
@@ -61,17 +90,27 @@ jobs:
         with:
           swift-version: "6.3"
 
-      - name: Pull image
-        run: docker pull ghcr.io/laosb/claudec:latest
+      - name: Download base image
+        uses: actions/download-artifact@v4
+        with:
+          name: claudec-image-${{ matrix.arch }}
+
+      - name: Load base image
+        run: gunzip -c claudec-image.tar.gz | docker load
 
       - name: Build binary
         run: bash build.sh --runtimes docker
 
+      - name: Pre-clone configurations repo
+        run: |
+          git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.claudec/configurations
+          touch ~/.claudec/configurations/.claudec-last-pull
+
       - name: Cache shared test profile
         uses: actions/cache@v4
         with:
-          path: ~/.claudec/profiles/__TEST_shared
-          key: claudec-test-profile-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh') }}
+          path: ~/.claudec/profiles/__TEST_shared_swift
+          key: claudec-test-profile-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
 
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter ClaudecIntegrationTests
@@ -80,6 +119,7 @@ jobs:
           VERBOSE: 1
 
   integration-tests-static:
+    needs: build-test-image
     strategy:
       fail-fast: false
       matrix:
@@ -104,8 +144,13 @@ jobs:
       - name: Install Static Linux SDK
         run: swift sdk install https://download.swift.org/swift-6.3-release/static-sdk/swift-6.3-RELEASE/swift-6.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz --checksum d2078b69bdeb5c31202c10e9d8a11d6f66f82938b51a4b75f032ccb35c4c286c
 
-      - name: Pull image
-        run: docker pull ghcr.io/laosb/claudec:latest
+      - name: Download base image
+        uses: actions/download-artifact@v4
+        with:
+          name: claudec-image-${{ matrix.arch }}
+
+      - name: Load base image
+        run: gunzip -c claudec-image.tar.gz | docker load
 
       - name: Build static binary
         run: bash build.sh --runtimes docker --swift-sdk ${{ matrix.swift-sdk }}
@@ -113,11 +158,16 @@ jobs:
       - name: Verify static linking
         run: file ./claudec | tee /dev/stderr | grep -q "statically linked"
 
+      - name: Pre-clone configurations repo
+        run: |
+          git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.claudec/configurations
+          touch ~/.claudec/configurations/.claudec-last-pull
+
       - name: Cache shared test profile
         uses: actions/cache@v4
         with:
-          path: ~/.claudec/profiles/__TEST_shared
-          key: claudec-test-profile-static-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh') }}
+          path: ~/.claudec/profiles/__TEST_shared_swift
+          key: claudec-test-profile-static-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
 
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter ClaudecIntegrationTests
