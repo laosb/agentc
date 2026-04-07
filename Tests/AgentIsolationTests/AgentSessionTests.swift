@@ -1,97 +1,11 @@
 import AgentIsolation
-import Crypto
 import Foundation
 import Testing
-
-// MARK: - Mock Runtime
-
-/// A mock container runtime that captures the configuration passed to `runContainer`
-/// and returns a controllable container, for testing `AgentSession` orchestration logic.
-final class MockRuntime: ContainerRuntime, @unchecked Sendable {
-  typealias Image = MockImage
-  typealias Container = MockContainer
-
-  var prepareCallCount = 0
-  var lastContainerConfiguration: ContainerConfiguration?
-  var lastImageRef: String?
-  var containerExitCode: Int32 = 0
-  var removedImageRefs: [String] = []
-  var removedImageDigests: [String] = []
-
-  required init(config: ContainerRuntimeConfiguration) {}
-
-  func prepare() async throws {
-    prepareCallCount += 1
-  }
-
-  func pullImage(ref: String) async throws -> MockImage? {
-    MockImage(ref: ref, digest: "sha256:mock")
-  }
-
-  func inspectImage(ref: String) async throws -> MockImage? {
-    MockImage(ref: ref, digest: "sha256:mock")
-  }
-
-  func removeImage(ref: String) async throws {
-    removedImageRefs.append(ref)
-  }
-
-  func removeImage(digest: String) async throws {
-    removedImageDigests.append(digest)
-  }
-
-  func runContainer(
-    imageRef: String,
-    configuration: ContainerConfiguration
-  ) async throws -> MockContainer {
-    lastImageRef = imageRef
-    lastContainerConfiguration = configuration
-    return MockContainer(id: "mock-container", exitCode: containerExitCode)
-  }
-
-  func removeContainer(_ container: MockContainer) async throws {
-    container.removed = true
-  }
-}
-
-struct MockImage: ContainerRuntimeImage {
-  var ref: String
-  var digest: String
-}
-
-final class MockContainer: ContainerRuntimeContainer, @unchecked Sendable {
-  let id: String
-  let exitCode: Int32
-  var stopped = false
-  var removed = false
-
-  init(id: String, exitCode: Int32) {
-    self.id = id
-    self.exitCode = exitCode
-  }
-
-  func wait(timeoutInSeconds: Int64?) async throws -> Int32 {
-    exitCode
-  }
-
-  func stop() async throws {
-    stopped = true
-  }
-}
-
-// MARK: - Helper
-
-private func sha256Hex(_ string: String) -> String {
-  let data = Data(string.utf8)
-  let digest = SHA256.hash(data: data)
-  return digest.map { String(format: "%02x", $0) }.joined()
-}
 
 // MARK: - Tests
 
 @Suite("AgentSession")
 struct AgentSessionTests {
-
   @Test("Prepares runtime before running container")
   func preparesRuntime() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
@@ -405,67 +319,6 @@ struct AgentSessionTests {
     var isDir: ObjCBool = false
     #expect(FileManager.default.fileExists(atPath: profileDir.path, isDirectory: &isDir))
     #expect(isDir.boolValue)
-  }
-}
-
-// MARK: - Workspace Path Tests
-
-@Suite("Workspace Paths")
-struct WorkspacePathTests {
-
-  @Test("workspaceContainerPath format is folderName-last10hash")
-  func newPathFormat() throws {
-    let base = URL(fileURLWithPath: "/tmp/claudec-wp-\(UUID().uuidString)")
-    let wsDir = base.appendingPathComponent("myproject")
-    try FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: base) }
-
-    let path = workspaceContainerPath(for: wsDir)
-    // Should start with /workspace/myproject-
-    #expect(path.hasPrefix("/workspace/myproject-"))
-    // The suffix should be exactly 10 hex chars
-    let parts = path.split(separator: "-")
-    let hashPart = String(parts.last!)
-    #expect(hashPart.count == 10)
-    #expect(hashPart.allSatisfy { $0.isHexDigit })
-  }
-
-  @Test("legacyWorkspaceContainerPath format is full sha256")
-  func legacyPathFormat() throws {
-    let base = URL(fileURLWithPath: "/tmp/claudec-wp-\(UUID().uuidString)")
-    let wsDir = base.appendingPathComponent("myproject")
-    try FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: base) }
-
-    let path = legacyWorkspaceContainerPath(for: wsDir)
-    #expect(path.hasPrefix("/workspace/"))
-    // Legacy path should be /workspace/<64-char hex sha256>
-    let hash = String(path.dropFirst("/workspace/".count))
-    #expect(hash.count == 64)
-    #expect(hash.allSatisfy { $0.isHexDigit })
-  }
-
-  @Test("workspaceContainerPath matches AgentSession working directory")
-  func matchesAgentSession() async throws {
-    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
-    let base = URL(fileURLWithPath: "/tmp/claudec-wp-\(UUID().uuidString)")
-    let profileDir = base.appendingPathComponent("home")
-    let wsDir = base.appendingPathComponent("myproject")
-    try FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: base) }
-
-    let config = IsolationConfig(
-      image: "test:latest",
-      profileHomeDir: profileDir,
-      workspace: wsDir,
-      configurationsDir: URL(fileURLWithPath: "/tmp"),
-      arguments: ["echo"]
-    )
-    let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
-
-    let workDir = runtime.lastContainerConfiguration!.workingDirectory!
-    #expect(workDir == workspaceContainerPath(for: wsDir))
   }
 }
 
