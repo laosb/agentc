@@ -11,7 +11,7 @@ enum WorkspaceMigration {
   /// Check for a legacy workspace project folder and prompt the user for migration.
   ///
   /// - Parameters:
-  ///   - profileHomeDir: The host-side profile home directory (maps to /home/claude).
+  ///   - profileHomeDir: The host-side profile home directory (maps to /home/agent).
   ///   - legacyPath: The old container workspace path (e.g. `/workspace/<sha256>`).
   ///   - newPath: The new container workspace path (e.g. `/workspace/<name>-<hash10>`).
   /// - Throws: ``WorkspaceMigrationError/cancelled`` if the user chooses to quit.

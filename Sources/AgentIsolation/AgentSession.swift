@@ -1,11 +1,16 @@
 import Foundation
 
+/// Settings from an agent configuration's settings.json.
+private struct AgentConfigurationSettings: Decodable {
+  var additionalMounts: [String]?
+}
+
 /// Orchestrates running an isolated agent container session using a ``ContainerRuntime``.
 ///
 /// `AgentSession` is responsible for:
 /// - Preparing the runtime
 /// - Computing workspace paths and directory layout
-/// - Building container mounts (profile home, workspace, exclude overlays, bootstrap script)
+/// - Building container mounts (profile home, workspace, exclude overlays, configurations, additional mounts)
 /// - Configuring and running the container
 /// - Performing necessary cleanups (temp dirs)
 public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
@@ -18,7 +23,11 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
   }
 
   /// Run the agent session and return the container process exit code.
-  public func run() async throws -> Int32 {
+  ///
+  /// - Parameter entrypoint: Optional entrypoint override. When non-nil, the bootstrap
+  ///   executes this instead of the last configuration's entrypoint (e.g. `["/bin/bash"]`
+  ///   for an interactive shell, or `["/bin/bash", "-c", "ls -la"]` for a command).
+  public func run(entrypoint entrypointOverride: [String]? = nil) async throws -> Int32 {
     try await runtime.prepare()
 
     let canonicalWorkspace = resolveSymlinksWithPrivate(config.workspace)
@@ -32,11 +41,11 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
     // Build mounts list
     var mounts: [ContainerConfiguration.Mount] = []
 
-    // Profile home → /home/claude
+    // Profile home → /home/agent
     mounts.append(
       .init(
         hostPath: config.profileHomeDir.path,
-        containerPath: "/home/claude"
+        containerPath: "/home/agent"
       ))
 
     // Workspace
@@ -67,8 +76,39 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
         ))
     }
 
+    // Configurations directory → /agent-isolation/agents (read-only)
+    mounts.append(
+      .init(
+        hostPath: config.configurationsDir.path,
+        containerPath: "/agent-isolation/agents",
+        isReadOnly: true
+      ))
+
+    // Additional mounts from agent configurations
+    let additionalMountsDir = config.profileHomeDir.deletingLastPathComponent()
+      .appendingPathComponent("additionalMounts")
+    for configName in config.configurations {
+      let settingsURL = config.configurationsDir
+        .appendingPathComponent(configName)
+        .appendingPathComponent("settings.json")
+      guard let data = try? Data(contentsOf: settingsURL) else { continue }
+      guard let settings = try? JSONDecoder().decode(AgentConfigurationSettings.self, from: data)
+      else { continue }
+      for containerPath in settings.additionalMounts ?? [] {
+        guard !containerPath.isEmpty else { continue }
+        let segment = pathSegment(for: containerPath)
+        let hostDir = additionalMountsDir.appendingPathComponent(segment)
+        try FileManager.default.createDirectory(at: hostDir, withIntermediateDirectories: true)
+        mounts.append(
+          .init(
+            hostPath: hostDir.path,
+            containerPath: containerPath
+          ))
+      }
+    }
+
     // Bootstrap script: copy to temp dir so it can be shared as a virtiofs volume
-    var entrypoint = config.arguments
+    var overridesEntrypoint = false
     if let bootstrapScript = config.bootstrapScript {
       let tempDir = try makeTempDir()
       tempDirs.append(tempDir)
@@ -89,7 +129,28 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
           hostPath: resolveSymlinksWithPrivate(tempDir).path,
           containerPath: "/entrypoint-bootstrap"
         ))
-      entrypoint = ["/entrypoint-bootstrap/entrypoint.sh"] + config.arguments
+      overridesEntrypoint = true
+    }
+
+    // Environment: pass configurations and optional entrypoint override to bootstrap
+    var environment: [String: String] = [:]
+    environment["CLAUDEC_CONFIGURATIONS"] = config.configurations.joined(separator: ",")
+
+    // When an entrypoint override is provided (e.g. "sh" dispatch), the override
+    // args replace config.arguments as the container CMD, and a flag tells the
+    // bootstrap to exec them directly instead of running the configuration entrypoint.
+    var containerArgs = config.arguments
+    if let override = entrypointOverride {
+      containerArgs = override
+      environment["CLAUDEC_ENTRYPOINT_OVERRIDE"] = "1"
+    }
+
+    // Build the final entrypoint (CMD args to the image's or custom ENTRYPOINT)
+    let entrypoint: [String]
+    if overridesEntrypoint {
+      entrypoint = ["/entrypoint-bootstrap/entrypoint.sh"] + containerArgs
+    } else {
+      entrypoint = containerArgs
     }
 
     let io: ContainerConfiguration.IO =
@@ -97,8 +158,9 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
 
     let containerConfig = ContainerConfiguration(
       entrypoint: entrypoint,
-      overridesImageEntrypoint: config.bootstrapScript != nil,
+      overridesImageEntrypoint: overridesEntrypoint,
       workingDirectory: wsContainerPath,
+      environment: environment,
       mounts: mounts,
       io: io
     )

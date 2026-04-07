@@ -91,6 +91,11 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
       binds.append("\(mount.hostPath):\(mount.containerPath):\(opts)")
     }
 
+    // Build environment
+    let envVars: [String]? = configuration.environment.isEmpty
+      ? nil
+      : configuration.environment.map { "\($0.key)=\($0.value)" }
+
     // Create container – when a custom entrypoint override is requested, set Docker's
     // Entrypoint field to replace the image's built-in ENTRYPOINT. Otherwise, use Cmd
     // so the image's ENTRYPOINT receives these as arguments.
@@ -99,6 +104,7 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
       Image: imageRef,
       Entrypoint: configuration.overridesImageEntrypoint ? entryArgs : nil,
       Cmd: configuration.overridesImageEntrypoint ? nil : entryArgs,
+      Env: envVars,
       WorkingDir: configuration.workingDirectory,
       Tty: useTTY,
       OpenStdin: true,

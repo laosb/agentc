@@ -132,6 +132,11 @@
           containerConfig.process.workingDirectory = workDir
         }
 
+        // Environment
+        for (key, value) in configuration.environment {
+          containerConfig.process.environmentVariables.append("\(key)=\(value)")
+        }
+
         // Mounts
         for mount in configuration.mounts {
           containerConfig.mounts.append(

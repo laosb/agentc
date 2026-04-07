@@ -26,6 +26,17 @@ private func sha256Hex(_ string: String) -> String {
   return digest.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Compute a path segment from a path string.
+///
+/// The segment format is `<lastComponent>-<last10sha>` where `lastComponent` is the
+/// last path component and `last10sha` is the last 10 characters of the SHA-256 hex
+/// digest of the full path.
+public func pathSegment(for path: String) -> String {
+  let name = URL(fileURLWithPath: path).lastPathComponent
+  let hash = sha256Hex(path)
+  return "\(name)-\(String(hash.suffix(10)))"
+}
+
 /// Compute the container workspace mount path for a given host workspace URL.
 ///
 /// The path format is `/workspace/<folderName>-<last10sha>` where `folderName` is the
@@ -33,9 +44,7 @@ private func sha256Hex(_ string: String) -> String {
 /// characters of the SHA-256 hex digest of the full canonical path.
 public func workspaceContainerPath(for workspace: URL) -> String {
   let canonical = resolveSymlinksWithPrivate(workspace)
-  let hash = sha256Hex(canonical.path)
-  let name = canonical.lastPathComponent
-  return "/workspace/\(name)-\(String(hash.suffix(10)))"
+  return "/workspace/\(pathSegment(for: canonical.path))"
 }
 
 /// Compute the legacy container workspace mount path for a given host workspace URL.

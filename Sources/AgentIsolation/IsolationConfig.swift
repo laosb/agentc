@@ -5,7 +5,7 @@ public struct IsolationConfig: Sendable {
   /// Container image reference (e.g. "ghcr.io/laosb/claudec:latest").
   public var image: String
 
-  /// Host directory to mount as /home/claude inside the container.
+  /// Host directory to mount as /home/agent inside the container.
   public var profileHomeDir: URL
 
   /// Host workspace directory to mount inside the container.
@@ -15,6 +15,13 @@ public struct IsolationConfig: Sendable {
   /// Subfolder names within the workspace to mask with empty read-only mounts.
   /// Strips leading/trailing slashes. Multiple values allowed.
   public var excludeFolders: [String]
+
+  /// Host directory containing agent configurations (cloned repo).
+  /// Mounted read-only at /agent-isolation/agents in the container.
+  public var configurationsDir: URL
+
+  /// Ordered list of configuration names to activate.
+  public var configurations: [String]
 
   /// Optional path to a custom bootstrap/entrypoint script on the host.
   /// When set, the script is mounted into the container and used as the entrypoint,
@@ -35,6 +42,8 @@ public struct IsolationConfig: Sendable {
     profileHomeDir: URL,
     workspace: URL,
     excludeFolders: [String] = [],
+    configurationsDir: URL,
+    configurations: [String] = ["claude"],
     bootstrapScript: URL? = nil,
     arguments: [String] = [],
     allocateTTY: Bool = false,
@@ -44,6 +53,8 @@ public struct IsolationConfig: Sendable {
     self.profileHomeDir = profileHomeDir
     self.workspace = workspace
     self.excludeFolders = excludeFolders
+    self.configurationsDir = configurationsDir
+    self.configurations = configurations
     self.bootstrapScript = bootstrapScript
     self.arguments = arguments
     self.allocateTTY = allocateTTY

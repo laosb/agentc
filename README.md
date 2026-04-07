@@ -40,14 +40,14 @@ For Linux environments, the normal build is expected to work on [distros directl
 claudec                         # start Claude Code in $PWD
 claudec "explain this codebase" # pass arguments to Claude Code
 claudec sh                      # open a shell in the container
-claudec sh ls -la /home/claude  # run a command inside the container
+claudec sh ls -la /home/agent   # run a command inside the container
 ```
 
-On first run, the bootstrap script installs swiftly, a Swift toolchain, Bun, and Claude Code into the profile's home directory. Subsequent runs reuse the existing install. Customise by setting `CLAUDEC_BOOTSTRAP_SCRIPT` or by building your own image from the [Dockerfile](./Dockerfile).
+On first run, claudec clones the [agent-isolation-configurations](https://github.com/laosb/agent-isolation-configurations) repo and processes the configured agent configurations (default: `claude`). Each configuration has a `prepare.sh` that installs its required tools into the profile's home directory. Subsequent runs reuse the existing install. Customise configurations via `CLAUDEC_CONFIGURATIONS` or in the profile's `settings.json`.
 
 ### Profiles
 
-A profile is a persistent `/home/claude` that survives container restarts — keeping Claude Code auth, memory, MCP servers, and settings.
+A profile is a persistent `/home/agent` that survives container restarts — keeping Claude Code auth, memory, MCP servers, and settings.
 
 ```sh
 CLAUDEC_PROFILE=work claudec        # use a named profile
@@ -68,6 +68,9 @@ Each workspace is mounted at a deterministic path inside the container derived f
 | `CLAUDEC_PROFILE_DIR` | *(derived)* | Full path to profile directory. Overrides `CLAUDEC_PROFILE`. |
 | `CLAUDEC_IMAGE` | `ghcr.io/laosb/claudec:latest` | Container image reference. |
 | `CLAUDEC_WORKSPACE` | `$PWD` | Host directory mounted as the workspace. |
+| `CLAUDEC_CONFIGURATIONS` | *(from profile settings or `claude`)* | Comma-separated list of agent configuration names to activate. |
+| `CLAUDEC_CONFIGURATIONS_REPO` | `https://github.com/laosb/agent-isolation-configurations` | Git repo URL for agent configurations. |
+| `CLAUDEC_CONFIGURATIONS_UPDATE_INTERVAL_SECONDS` | `86400` | Seconds between configuration repo update checks. |
 | `CLAUDEC_IMAGE_AUTO_UPDATE` | `1` | Set `0` to skip pulling latest image before each run. |
 | `CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD` | `1` | Set `0` to keep old image after auto-update pulls a newer one. |
 | `CLAUDEC_EXCLUDE_FOLDERS` | *(empty)* | Comma-separated workspace sub-folders to mask with empty read-only overlays (e.g. `node_modules,.git`). |

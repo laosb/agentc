@@ -82,6 +82,7 @@ public struct ContainerConfiguration: Sendable {
   /// When false, `entrypoint` is passed as command/arguments to the image's entrypoint.
   public var overridesImageEntrypoint: Bool
   public var workingDirectory: String?
+  public var environment: [String: String]
   public var mounts: [Mount]
   public var io: IO
 
@@ -89,12 +90,14 @@ public struct ContainerConfiguration: Sendable {
     entrypoint: [String],
     overridesImageEntrypoint: Bool = false,
     workingDirectory: String? = nil,
+    environment: [String: String] = [:],
     mounts: [Mount] = [],
     io: IO = .currentTerminal
   ) {
     self.entrypoint = entrypoint
     self.overridesImageEntrypoint = overridesImageEntrypoint
     self.workingDirectory = workingDirectory
+    self.environment = environment
     self.mounts = mounts
     self.io = io
   }

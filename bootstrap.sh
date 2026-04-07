@@ -1,73 +1,58 @@
 #!/bin/bash
 set -e
 
-# Adjust docker group GID to match the mounted socket, if present
-if [ -S /var/run/docker.sock ]; then
-    SOCK_GID=$(stat -c '%g' /var/run/docker.sock)
-    CURRENT_GID=$(getent group docker | cut -d: -f3)
-    if [ "$SOCK_GID" != "$CURRENT_GID" ] && [ "$SOCK_GID" != "0" ]; then
-        sudo groupmod -g "$SOCK_GID" docker
+# Ensure volume-mounted user home is owned by agent
+sudo chown -R agent:agent /home/agent 2>/dev/null || true
+
+CONFIGURATIONS_DIR="/agent-isolation/agents"
+CONFIGURATIONS="${CLAUDEC_CONFIGURATIONS:-claude}"
+
+# Split comma-separated configurations into array
+IFS=',' read -ra CONFIG_NAMES <<< "$CONFIGURATIONS"
+
+# Process each configuration in order
+LAST_ENTRYPOINT=""
+for config_name in "${CONFIG_NAMES[@]}"; do
+    config_name=$(echo "$config_name" | xargs)  # trim whitespace
+    config_dir="${CONFIGURATIONS_DIR}/${config_name}"
+    settings_file="${config_dir}/settings.json"
+
+    if [ ! -f "$settings_file" ]; then
+        echo "claudec: configuration '${config_name}' not found at ${settings_file}" >&2
+        exit 1
     fi
-fi
 
-# Ensure volume-mounted user home is owned by claude
-sudo chown -R claude:claude /home/claude 2>/dev/null || true
+    # Add additionalBinPaths to PATH
+    while IFS= read -r bin_path; do
+        # Expand $HOME in paths
+        bin_path=$(echo "$bin_path" | sed "s|\\\$HOME|$HOME|g")
+        export PATH="${bin_path}:${PATH}"
+    done < <(jq -r '.additionalBinPaths[]? // empty' "$settings_file")
 
-# ── Swiftly ────────────────────────────────────────────────────────────────────
-SWIFTLY_HOME="${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}"
-
-if [ ! -x "$SWIFTLY_HOME/bin/swiftly" ]; then
-    ARCH=$(uname -m)
-    SWIFTLY_URL="https://download.swift.org/swiftly/linux/swiftly-${ARCH}.tar.gz"
-
-    echo "==> System info: $(uname -a)"
-    echo "==> Downloading swiftly from: ${SWIFTLY_URL}"
-
-    curl -fsSL "${SWIFTLY_URL}" -o /tmp/swiftly.tar.gz
-    tar -zxf /tmp/swiftly.tar.gz -C /tmp
-
-    # debian:latest is Debian 13 (Trixie); swiftly's platform detection only
-    # knows debian12. Override to debian12, which is ABI-compatible.
-    echo "==> Installing swiftly (platform override: debian12)..."
-    /tmp/swiftly init --quiet-shell-followup --assume-yes --platform debian12
-    rm -f /tmp/swiftly /tmp/swiftly.tar.gz
-fi
-
-# Source swiftly environment so PATH is updated
-[ -f "$SWIFTLY_HOME/env.sh" ] && . "$SWIFTLY_HOME/env.sh"
-
-# Install latest stable Swift toolchain if none is installed yet
-if command -v swiftly &>/dev/null && [ -z "$(ls -A "$SWIFTLY_HOME/toolchains/" 2>/dev/null)" ]; then
-    echo "==> Installing Swift latest release..."
-    swiftly install --assume-yes latest
-fi
-
-# Extend PATH with all user-local bin directories
-export PATH="$HOME/.bun/bin:$HOME/.claude/bin:$HOME/.local/bin:$SWIFTLY_HOME/bin:$PATH"
-
-# ── Bun ───────────────────────────────────────────────────────────────────────
-if ! command -v bun &>/dev/null; then
-    echo "==> Installing Bun..."
-    curl -fsSL https://bun.sh/install | bash
-    export PATH="$HOME/.bun/bin:$PATH"
-fi
-
-# ── Claude Code ────────────────────────────────────────────────────────────────
-if ! command -v claude &>/dev/null; then
-    echo "==> Installing Claude Code..."
-    curl -fsSL https://claude.ai/install.sh | bash
-    # Re-export PATH in case the installer added new directories
-    export PATH="$HOME/.claude/bin:$HOME/.local/bin:$PATH"
-fi
-
-# ── Dispatch ───────────────────────────────────────────────────────────────────
-if [ "${1:-}" = "sh" ]; then
-    shift
-    if [ $# -eq 0 ]; then
-        exec /bin/bash
-    else
-        exec /bin/bash -c "$*"
+    # Run prepare.sh if it exists
+    prepare_script="${config_dir}/prepare.sh"
+    if [ -f "$prepare_script" ]; then
+        echo "==> Running prepare.sh for configuration '${config_name}'..."
+        if ! bash "$prepare_script"; then
+            echo "claudec: prepare.sh failed for configuration '${config_name}'" >&2
+            exit 1
+        fi
     fi
+
+    # Read entrypoint from the last configuration
+    LAST_ENTRYPOINT=$(jq -c '.entrypoint // empty' "$settings_file")
+done
+
+# Check for entrypoint override (e.g. from "claudec sh" dispatch)
+if [ "${CLAUDEC_ENTRYPOINT_OVERRIDE:-}" = "1" ]; then
+    exec "$@"
 fi
 
-exec claude "$@"
+# Execute entrypoint of last configuration with all CLI arguments appended
+if [ -n "$LAST_ENTRYPOINT" ] && [ "$LAST_ENTRYPOINT" != "null" ]; then
+    readarray -t ENTRYPOINT_ARGS < <(echo "$LAST_ENTRYPOINT" | jq -r '.[]')
+    exec "${ENTRYPOINT_ARGS[@]}" "$@"
+else
+    echo "claudec: no entrypoint defined in last configuration" >&2
+    exit 1
+fi

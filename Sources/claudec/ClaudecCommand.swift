@@ -9,6 +9,11 @@ import ArgumentParser
 import Foundation
 import Logging
 
+/// Settings from a claudec profile's settings.json.
+private struct ProfileSettings: Decodable {
+  var configurations: [String]?
+}
+
 @main
 struct ClaudecCommand: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
@@ -36,11 +41,13 @@ struct ClaudecCommand: AsyncParsableCommand {
     }
 
     // ── Resolve profile directory ──────────────────────────────────────
+    let profile: String
     let profileDir: URL
     if let customDir = env["CLAUDEC_PROFILE_DIR"], !customDir.isEmpty {
       profileDir = URL(fileURLWithPath: customDir)
+      profile = profileDir.lastPathComponent
     } else {
-      let profile = env["CLAUDEC_PROFILE"] ?? "default"
+      profile = env["CLAUDEC_PROFILE"] ?? "default"
       let home = URL(fileURLWithPath: NSHomeDirectory())
       profileDir =
         home
@@ -70,6 +77,29 @@ struct ClaudecCommand: AsyncParsableCommand {
 
     let allocateTTY = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
 
+    // ── Manage configurations repo ─────────────────────────────────────
+    let home = URL(fileURLWithPath: NSHomeDirectory())
+    let configurationsDir = home.appending(path: ".claudec").appending(path: "configurations")
+    try ensureConfigurationsRepo(at: configurationsDir, env: env)
+
+    // ── Resolve configurations list ────────────────────────────────────
+    let configurations: [String] = {
+      // 1. Override via env var
+      if let raw = env["CLAUDEC_CONFIGURATIONS"], !raw.isEmpty {
+        return raw.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+      }
+      // 2. Read from profile settings.json
+      let settingsURL = profileDir.appendingPathComponent("settings.json")
+      if let data = try? Data(contentsOf: settingsURL),
+        let settings = try? JSONDecoder().decode(ProfileSettings.self, from: data),
+        let configs = settings.configurations, !configs.isEmpty
+      {
+        return configs
+      }
+      // 3. Default
+      return ["claude"]
+    }()
+
     // ── Check for legacy workspace migration ───────────────────────────
     let profileHomeDir = profileDir.appending(path: "home")
     try WorkspaceMigration.migrateIfNeeded(
@@ -81,6 +111,20 @@ struct ClaudecCommand: AsyncParsableCommand {
     // ── Resolve container runtime ──────────────────────────────────────
     let runtimeName = resolveRuntimeName(env: env)
     let dockerEndpoint = env["CLAUDEC_DOCKER_ENDPOINT"]
+
+    // ── Detect "sh" dispatch ──────────────────────────────────────────
+    var entrypointOverride: [String]? = nil
+    var forwardedArguments = arguments
+
+    if let first = arguments.first, first == "sh" {
+      let remaining = Array(arguments.dropFirst())
+      if remaining.isEmpty {
+        entrypointOverride = ["/bin/bash"]
+      } else {
+        entrypointOverride = ["/bin/bash", "-c", remaining.joined(separator: " ")]
+      }
+      forwardedArguments = []
+    }
 
     // ── Set up runtime and run ─────────────────────────────────────────
     let storagePath =
@@ -94,8 +138,10 @@ struct ClaudecCommand: AsyncParsableCommand {
       profileHomeDir: profileHomeDir,
       workspace: workspace,
       excludeFolders: excludeFolders,
+      configurationsDir: configurationsDir,
+      configurations: configurations,
       bootstrapScript: bootstrapScript,
-      arguments: arguments,
+      arguments: forwardedArguments,
       allocateTTY: allocateTTY
     )
 
@@ -122,7 +168,7 @@ struct ClaudecCommand: AsyncParsableCommand {
           }
         }
         let session = AgentSession(config: isolationConfig, runtime: runtime)
-        exitCode = try await session.run()
+        exitCode = try await session.run(entrypoint: entrypointOverride)
     #endif
     #if ContainerRuntimeDocker
       case "docker":
@@ -142,7 +188,7 @@ struct ClaudecCommand: AsyncParsableCommand {
           }
         }
         let session = AgentSession(config: isolationConfig, runtime: runtime)
-        exitCode = try await session.run()
+        exitCode = try await session.run(entrypoint: entrypointOverride)
     #endif
     default:
       fatalError(
@@ -176,16 +222,74 @@ struct ClaudecCommand: AsyncParsableCommand {
       #endif
     #endif
   }
+
+  // MARK: - Configurations Repo Management
+
+  /// Ensure the configurations repo is cloned and up-to-date.
+  private func ensureConfigurationsRepo(at dir: URL, env: [String: String]) throws {
+    let repoURL =
+      env["CLAUDEC_CONFIGURATIONS_REPO"]
+      ?? "https://github.com/laosb/agent-isolation-configurations"
+    let updateInterval = Int(env["CLAUDEC_CONFIGURATIONS_UPDATE_INTERVAL_SECONDS"] ?? "") ?? 86400
+
+    let gitDir = dir.appendingPathComponent(".git")
+
+    if !FileManager.default.fileExists(atPath: gitDir.path) {
+      // Clone the repo
+      try FileManager.default.createDirectory(
+        at: dir.deletingLastPathComponent(), withIntermediateDirectories: true)
+      // Remove dir if it exists but isn't a git repo
+      if FileManager.default.fileExists(atPath: dir.path) {
+        try FileManager.default.removeItem(at: dir)
+      }
+      FileHandle.standardError.write(
+        Data("claudec: cloning configurations repo...\n".utf8))
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+      process.arguments = ["clone", "--depth", "1", repoURL, dir.path]
+      try process.run()
+      process.waitUntilExit()
+      guard process.terminationStatus == 0 else {
+        throw ClaudecError.configRepoError(
+          "Failed to clone configurations repo from \(repoURL)")
+      }
+      return
+    }
+
+    // Check if update is needed
+    let markerFile = dir.appendingPathComponent(".claudec-last-pull")
+    let now = Date()
+    if let attrs = try? FileManager.default.attributesOfItem(atPath: markerFile.path),
+      let modified = attrs[.modificationDate] as? Date,
+      now.timeIntervalSince(modified) < Double(updateInterval)
+    {
+      return  // Recently updated
+    }
+
+    // Pull updates
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["-C", dir.path, "pull", "--ff-only", "--quiet"]
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    // Update marker regardless of pull success (avoid repeated failures)
+    FileManager.default.createFile(atPath: markerFile.path, contents: nil)
+  }
 }
 
 // MARK: - Errors
 
 private enum ClaudecError: LocalizedError {
   case unsupportedEnvVar(String)
+  case configRepoError(String)
 
   var errorDescription: String? {
     switch self {
     case .unsupportedEnvVar(let message):
+      return "claudec: \(message)"
+    case .configRepoError(let message):
       return "claudec: \(message)"
     }
   }

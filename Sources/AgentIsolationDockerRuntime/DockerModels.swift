@@ -27,6 +27,7 @@ struct DockerCreateContainerRequest: Codable, Sendable {
   var Image: String
   var Entrypoint: [String]?
   var Cmd: [String]?
+  var Env: [String]?
   var WorkingDir: String?
   var Tty: Bool?
   var OpenStdin: Bool?

@@ -88,34 +88,17 @@ private func workspaceContainerPath(for ws: URL) -> String {
 private func stubProfileHome(at homeDir: URL) throws {
   let fm = FileManager.default
 
-  try fm.createDirectory(
-    at: homeDir.appendingPathComponent(".local/share/swiftly/bin"),
-    withIntermediateDirectories: true)
-  try fm.createDirectory(
-    at: homeDir.appendingPathComponent(".local/share/swiftly/toolchains"),
-    withIntermediateDirectories: true)
+  // The new configuration-based bootstrap reads from /agent-isolation/agents,
+  // and configurations install tools as needed. For integration tests, we just
+  // need the home dir to exist so the bootstrap can proceed.
   try fm.createDirectory(
     at: homeDir.appendingPathComponent(".claude/bin"),
     withIntermediateDirectories: true)
-
-  // Stub swiftly
-  let swiftlyBin = homeDir.appendingPathComponent(".local/share/swiftly/bin/swiftly")
-  try "#!/bin/sh\nexit 0\n".write(to: swiftlyBin, atomically: true, encoding: .utf8)
-  try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: swiftlyBin.path)
-
-  // env.sh
-  let envSh = homeDir.appendingPathComponent(".local/share/swiftly/env.sh")
-  try "export PATH=\"${HOME}/.local/share/swiftly/bin:${PATH}\"\n"
-    .write(to: envSh, atomically: true, encoding: .utf8)
-
-  // Non-empty toolchains dir
-  try Data().write(
-    to: homeDir.appendingPathComponent(".local/share/swiftly/toolchains/.placeholder"))
-
-  // Stub bun
   try fm.createDirectory(
     at: homeDir.appendingPathComponent(".bun/bin"),
     withIntermediateDirectories: true)
+
+  // Stub bun
   let bunBin = homeDir.appendingPathComponent(".bun/bin/bun")
   try "#!/bin/sh\nexit 0\n".write(to: bunBin, atomically: true, encoding: .utf8)
   try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bunBin.path)
@@ -202,7 +185,7 @@ struct ClaudecIntegrationTests {
         "CLAUDEC_PROFILE_DIR": dir.path,
         "CLAUDEC_BOOTSTRAP_SCRIPT": bootstrapScriptPath,
       ],
-      arguments: ["sh", "cat", "/home/claude/sentinel.txt"]
+      arguments: ["sh", "cat", "/home/agent/sentinel.txt"]
     )
     #expect(result.exitCode == 0)
     #expect(result.output.contains("sentinel_content"))
