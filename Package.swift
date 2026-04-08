@@ -11,6 +11,7 @@ let package = Package(
     .library(
       name: "AgentIsolationDockerRuntime", targets: ["AgentIsolationDockerRuntime"]),
     .executable(name: "claudec", targets: ["claudec"]),
+    .executable(name: "agentc", targets: ["agentc"]),
   ],
   traits: [
     .default(enabledTraits: ["ContainerRuntimeAppleContainer", "ContainerRuntimeDocker"]),
@@ -61,6 +62,16 @@ let package = Package(
     ),
     .executableTarget(
       name: "claudec",
+      dependencies: [
+        "AgentIsolation",
+        .target(name: "AgentIsolationAppleContainerRuntime", condition: .when(traits: ["ContainerRuntimeAppleContainer"])),
+        .target(name: "AgentIsolationDockerRuntime", condition: .when(traits: ["ContainerRuntimeDocker"])),
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "Logging", package: "swift-log"),
+      ]
+    ),
+    .executableTarget(
+      name: "agentc",
       dependencies: [
         "AgentIsolation",
         .target(name: "AgentIsolationAppleContainerRuntime", condition: .when(traits: ["ContainerRuntimeAppleContainer"])),

@@ -108,6 +108,17 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
       }
     }
 
+    // Additional host mounts (from CLI --additional-mount flags)
+    for hostMount in config.additionalHostMounts {
+      let canonical = AgentIsolationPathUtils.resolveSymlinksWithPlatformConsiderations(hostMount)
+      let containerPath = "/workspace/\(AgentIsolationPathUtils.pathIdentifier(for: canonical.path))"
+      mounts.append(
+        .init(
+          hostPath: canonical.path,
+          containerPath: containerPath
+        ))
+    }
+
     // Bootstrap script: copy to temp dir so it can be shared as a virtiofs volume
     var overridesEntrypoint = false
     if let bootstrapScript = config.bootstrapScript {

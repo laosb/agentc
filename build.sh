@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and (on macOS with Apple Container support) sign the claudec binary.
+# Build and (on macOS with Apple Container support) sign the claudec and agentc binaries.
 #
 # Usage:
 #   ./build.sh [--debug] [--runtimes apple-container,docker] [--swift-sdk SDK]
@@ -20,7 +20,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENTITLEMENTS="${SCRIPT_DIR}/signing/claudec.entitlements"
+CLAUDEC_ENTITLEMENTS="${SCRIPT_DIR}/signing/claudec.entitlements"
+AGENTC_ENTITLEMENTS="${SCRIPT_DIR}/signing/agentc.entitlements"
 
 CONFIG="release"
 RUNTIMES=""
@@ -100,10 +101,25 @@ if [[ -z "${TRAITS}" ]]; then
     exit 1
 fi
 
-echo "Building claudec (${CONFIG}) with runtimes: ${RUNTIMES}..."
+echo "Building claudec & agentc (${CONFIG}) with runtimes: ${RUNTIMES}..."
 echo "  Traits: ${TRAITS}"
 if [[ -n "${SWIFT_SDK}" ]]; then
     echo "  Swift SDK: ${SWIFT_SDK}"
+fi
+
+# Inject build info into agentc if BUILD_VERSION or BUILD_GIT_SHA are set
+BUILDINFO_FILE="${SCRIPT_DIR}/Sources/agentc/BuildInfo.swift"
+BUILDINFO_ORIGINAL=""
+BUILD_VERSION="${BUILD_VERSION:-dev}"
+BUILD_GIT_SHA="${BUILD_GIT_SHA:-$(git -C "${SCRIPT_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown")}"
+if [[ "${BUILD_VERSION}" != "dev" || "${BUILD_GIT_SHA}" != "unknown" ]]; then
+    BUILDINFO_ORIGINAL=$(cat "${BUILDINFO_FILE}")
+    cat > "${BUILDINFO_FILE}" <<SWIFT
+enum BuildInfo {
+  static let version = "${BUILD_VERSION}"
+  static let gitSHA = "${BUILD_GIT_SHA}"
+}
+SWIFT
 fi
 
 BUILD_ARGS=(-c "${CONFIG}" --disable-default-traits --traits "${TRAITS}")
@@ -117,17 +133,27 @@ else
 fi
 swift build "${BUILD_ARGS[@]}"
 
+# Restore original BuildInfo.swift if we modified it
+if [[ -n "${BUILDINFO_ORIGINAL}" ]]; then
+    echo "${BUILDINFO_ORIGINAL}" > "${BUILDINFO_FILE}"
+fi
+
 if [[ -n "${SWIFT_SDK}" ]]; then
-    BUILT_BINARY="${SCRIPT_DIR}/.build/${SWIFT_SDK}/${CONFIG}/claudec"
+    BUILD_DIR="${SCRIPT_DIR}/.build/${SWIFT_SDK}/${CONFIG}"
 else
-    BUILT_BINARY="${SCRIPT_DIR}/.build/${CONFIG}/claudec"
-fi
-OUTPUT_BINARY="${SCRIPT_DIR}/claudec"
-
-if [[ "${NEED_SIGN}" == true ]] && [[ "$(uname -s)" == "Darwin" ]] && [[ -z "${SWIFT_SDK}" ]]; then
-    echo "Signing with virtualization entitlement..."
-    codesign --sign - --entitlements "${ENTITLEMENTS}" --force "${BUILT_BINARY}"
+    BUILD_DIR="${SCRIPT_DIR}/.build/${CONFIG}"
 fi
 
-cp "${BUILT_BINARY}" "${OUTPUT_BINARY}"
-echo "Done → ${OUTPUT_BINARY}"
+for PRODUCT in claudec agentc; do
+    BUILT_BINARY="${BUILD_DIR}/${PRODUCT}"
+    OUTPUT_BINARY="${SCRIPT_DIR}/${PRODUCT}"
+    ENTITLEMENTS="${SCRIPT_DIR}/signing/${PRODUCT}.entitlements"
+
+    if [[ "${NEED_SIGN}" == true ]] && [[ "$(uname -s)" == "Darwin" ]] && [[ -z "${SWIFT_SDK}" ]]; then
+        echo "Signing ${PRODUCT} with virtualization entitlement..."
+        codesign --sign - --entitlements "${ENTITLEMENTS}" --force "${BUILT_BINARY}"
+    fi
+
+    cp "${BUILT_BINARY}" "${OUTPUT_BINARY}"
+    echo "Done → ${OUTPUT_BINARY}"
+done

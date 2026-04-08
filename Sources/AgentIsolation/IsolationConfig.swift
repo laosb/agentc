@@ -37,6 +37,10 @@ public struct IsolationConfig: Sendable {
   /// Memory limit string understood by the container runtime (e.g. "1536m" = 1.5 GiB).
   public var memoryLimit: String
 
+  /// Additional host directories to mount inside the container.
+  /// Each is mounted at /workspace/<pathIdentifier(canonicalPath)>.
+  public var additionalHostMounts: [URL]
+
   public init(
     image: String,
     profileHomeDir: URL,
@@ -47,7 +51,8 @@ public struct IsolationConfig: Sendable {
     bootstrapScript: URL? = nil,
     arguments: [String] = [],
     allocateTTY: Bool = false,
-    memoryLimit: String = "1536m"
+    memoryLimit: String = "1536m",
+    additionalHostMounts: [URL] = []
   ) {
     self.image = image
     self.profileHomeDir = profileHomeDir
@@ -59,5 +64,6 @@ public struct IsolationConfig: Sendable {
     self.arguments = arguments
     self.allocateTTY = allocateTTY
     self.memoryLimit = memoryLimit
+    self.additionalHostMounts = additionalHostMounts
   }
 }
