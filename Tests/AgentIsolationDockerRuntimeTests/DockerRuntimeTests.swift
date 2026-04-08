@@ -291,6 +291,38 @@
     }
   }
 
+  // MARK: - Custom IO Helpers
+
+  /// Captures all data written to it; thread-safe.
+  final class MockWriter: Writer, @unchecked Sendable {
+    private var _data = Data()
+    private let lock = NSLock()
+
+    var data: Data { lock.withLock { _data } }
+    var string: String { String(data: data, encoding: .utf8) ?? "" }
+
+    func write(_ data: Data) throws { lock.withLock { _data.append(data) } }
+    func close() throws {}
+  }
+
+  /// A ReaderStream that immediately finishes without yielding data.
+  struct EmptyReaderStream: ReaderStream {
+    func stream() -> AsyncStream<Data> {
+      AsyncStream { $0.finish() }
+    }
+  }
+
+  /// A ReaderStream that yields a single data chunk then finishes.
+  struct DataReaderStream: ReaderStream {
+    let data: Data
+    func stream() -> AsyncStream<Data> {
+      AsyncStream { continuation in
+        continuation.yield(data)
+        continuation.finish()
+      }
+    }
+  }
+
   // MARK: - DockerRuntime Integration Tests
 
   private func isDockerAvailable() -> Bool {
@@ -406,6 +438,91 @@
       #expect(exitCode == 0)
 
       try await runtime.removeContainer(container)
+    }
+  }
+
+  // MARK: - Custom IO Integration Tests
+
+  @Suite("DockerRuntime Custom IO", .enabled(if: isDockerAvailable()))
+  struct DockerRuntimeCustomIOTests {
+
+    private func makeRuntime() -> DockerRuntime {
+      let endpoint = ProcessInfo.processInfo.environment["CLAUDEC_DOCKER_ENDPOINT"]
+      let config = ContainerRuntimeConfiguration(
+        storagePath: "/tmp/claudec-test-docker-custom-io", endpoint: endpoint)
+      return DockerRuntime(config: config)
+    }
+
+    @Test("custom IO captures stdout")
+    func capturesStdout() async throws {
+      let runtime = makeRuntime()
+      defer { Task { try? await runtime.shutdown() } }
+      try await runtime.prepare()
+      _ = try await runtime.pullImage(ref: "alpine:latest")
+
+      let stdout = MockWriter()
+      let config = ContainerConfiguration(
+        entrypoint: ["echo", "hello from custom io"],
+        io: .custom(stdin: EmptyReaderStream(), stdout: stdout, stderr: MockWriter())
+      )
+
+      let container = try await runtime.runContainer(
+        imageRef: "alpine:latest", configuration: config)
+      let exitCode = try await container.wait(timeoutInSeconds: 30)
+      try await runtime.removeContainer(container)
+
+      #expect(exitCode == 0)
+      #expect(stdout.string.contains("hello from custom io"))
+    }
+
+    @Test("custom IO separates stderr from stdout")
+    func separatesStderr() async throws {
+      let runtime = makeRuntime()
+      defer { Task { try? await runtime.shutdown() } }
+      try await runtime.prepare()
+      _ = try await runtime.pullImage(ref: "alpine:latest")
+
+      let stdout = MockWriter()
+      let stderr = MockWriter()
+      let config = ContainerConfiguration(
+        entrypoint: ["/bin/sh", "-c", "echo to-stdout; echo to-stderr >&2"],
+        io: .custom(stdin: EmptyReaderStream(), stdout: stdout, stderr: stderr)
+      )
+
+      let container = try await runtime.runContainer(
+        imageRef: "alpine:latest", configuration: config)
+      let exitCode = try await container.wait(timeoutInSeconds: 30)
+      try await runtime.removeContainer(container)
+
+      #expect(exitCode == 0)
+      #expect(stdout.string.contains("to-stdout"))
+      #expect(!stdout.string.contains("to-stderr"))
+      #expect(stderr.string.contains("to-stderr"))
+      #expect(!stderr.string.contains("to-stdout"))
+    }
+
+    @Test("custom IO sends stdin to container")
+    func sendsStdin() async throws {
+      let runtime = makeRuntime()
+      defer { Task { try? await runtime.shutdown() } }
+      try await runtime.prepare()
+      _ = try await runtime.pullImage(ref: "alpine:latest")
+
+      let stdout = MockWriter()
+      let stdinData = Data("hello".utf8)
+      let config = ContainerConfiguration(
+        entrypoint: ["head", "-c", "5"],
+        io: .custom(
+          stdin: DataReaderStream(data: stdinData), stdout: stdout, stderr: MockWriter())
+      )
+
+      let container = try await runtime.runContainer(
+        imageRef: "alpine:latest", configuration: config)
+      let exitCode = try await container.wait(timeoutInSeconds: 30)
+      try await runtime.removeContainer(container)
+
+      #expect(exitCode == 0)
+      #expect(stdout.data == stdinData)
     }
   }
 #endif

@@ -81,6 +81,7 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     let useTTY: Bool
     switch configuration.io {
     case .currentTerminal: useTTY = true
+    case .custom(_, _, _, let isTerminal): useTTY = isTerminal
     default: useTTY = false
     }
 
@@ -121,9 +122,9 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
 
     let containerId = try await client.createContainer(config: createConfig)
 
-    // Set up terminal for TTY mode
+    // Set up terminal for TTY mode — only when using the actual current terminal
     var terminalState: DockerTerminalState?
-    if useTTY {
+    if case .currentTerminal = configuration.io {
       terminalState = DockerTerminalState.setRaw()
     }
 
@@ -136,25 +137,12 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
         tty: useTTY
       )
 
-      let stdinFH: FileHandle
-      let stdoutFH: FileHandle
-      let stderrFH: FileHandle
-
       switch configuration.io {
       case .currentTerminal, .standardIO:
-        stdinFH = .standardInput
-        stdoutFH = .standardOutput
-        stderrFH = .standardError
-      case .custom(let stdin, let stdout, let stderr):
-        // For custom I/O, fall back to standard handles
-        // (full custom I/O bridging would need adapter FileHandles)
-        stdinFH = .standardInput
-        stdoutFH = .standardOutput
-        stderrFH = .standardError
-        _ = (stdin, stdout, stderr)  // silence unused warnings
+        conn.startIO(stdin: .standardInput, stdout: .standardOutput, stderr: .standardError)
+      case .custom(let stdin, let stdout, let stderr, _):
+        conn.startCustomIO(stdin: stdin, stdout: stdout, stderr: stderr)
       }
-
-      conn.startIO(stdin: stdinFH, stdout: stdoutFH, stderr: stderrFH)
       attachConnection = conn
     } catch {
       // If attach fails, clean up and rethrow

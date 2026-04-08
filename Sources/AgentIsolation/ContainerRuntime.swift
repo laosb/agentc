@@ -117,7 +117,8 @@ public struct ContainerConfiguration: Sendable {
   public enum IO: Sendable {
     case currentTerminal
     case standardIO
-    case custom(stdin: any ReaderStream, stdout: any Writer, stderr: any Writer)
+    case custom(
+      stdin: any ReaderStream, stdout: any Writer, stderr: any Writer, isTerminal: Bool = false)
   }
 }
 

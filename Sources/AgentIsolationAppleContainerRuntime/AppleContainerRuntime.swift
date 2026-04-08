@@ -156,11 +156,11 @@
           containerConfig.process.stdin = FileHandleReader(.standardInput)
           containerConfig.process.stdout = FileHandleWriter(.standardOutput)
           containerConfig.process.stderr = FileHandleWriter(.standardError)
-        case .custom:
-          // Custom IO not yet bridged to Containerization types
-          containerConfig.process.stdin = FileHandleReader(.standardInput)
-          containerConfig.process.stdout = FileHandleWriter(.standardOutput)
-          containerConfig.process.stderr = FileHandleWriter(.standardError)
+        case .custom(let stdin, let stdout, let stderr, let isTerminal):
+          containerConfig.process.terminal = isTerminal
+          containerConfig.process.stdin = ContainerizationReaderStream(stdin)
+          containerConfig.process.stdout = ContainerizationWriter(stdout)
+          containerConfig.process.stderr = ContainerizationWriter(stderr)
         }
       }
 
