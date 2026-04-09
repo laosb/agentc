@@ -234,10 +234,10 @@ struct AgentcIntegrationTests {
       ]
     )
     #expect(result.exitCode == 0)
-    // When useInit is enabled, PID 1 should be the init process (vminitd),
-    // not the entrypoint script. The entrypoint will run as a child process.
+    // When init is enabled, PID 1 should be an init process
+    // (docker-init on Docker, vminitd on Apple Container).
     let cmdline = result.output
-    #expect(!cmdline.contains("entrypoint"))
+    #expect(cmdline.contains("init"))
   }
 
   @Test("Positional configurations argument works for run")
