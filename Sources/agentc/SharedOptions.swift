@@ -74,7 +74,7 @@ extension SharedOptions {
       return (url.lastPathComponent, url)
     }
     let name = profile ?? "default"
-    let home = URL(fileURLWithPath: NSHomeDirectory())
+    let home = MigrationCheck.homeDir
     return (
       name,
       home.appending(path: ".agentc/profiles/\(name)")
@@ -86,7 +86,7 @@ extension SharedOptions {
     if let dir = configurationsDir, !dir.isEmpty {
       return URL(fileURLWithPath: dir)
     }
-    return URL(fileURLWithPath: NSHomeDirectory())
+    return MigrationCheck.homeDir
       .appending(path: ".agentc/configurations")
   }
 
