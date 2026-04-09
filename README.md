@@ -14,14 +14,13 @@ Available container runtimes: [Apple Containerization](https://apple.github.io/c
 
 **macOS / Linux (Docker runtime):** x64 or arm64, Docker Engine API v1.44+ (Docker, Podman with Docker compatibility, etc.).
 
-### From GitHub Releases
+### Install
 
 ```sh
-tar xzf agentc-<arch>-<os>.tar.gz
-sudo mv agentc /usr/local/bin/
+curl -fsSL https://raw.githubusercontent.com/laosb/agentc/main/install.sh | sh
 ```
 
-macOS builds include both runtimes. Linux builds support Docker only. A `-static` flavor is available for Linux distros not officially supported by Swift.
+This detects your platform, downloads the latest release from GitHub, and installs to `~/.agentc/bin/` with a symlink in `~/.local/bin/`.
 
 ## Quick Start
 
