@@ -418,7 +418,7 @@ struct ConfigurationTests {
     #expect(cfgMount?.isReadOnly == true)
   }
 
-  @Test("Passes CLAUDEC_CONFIGURATIONS environment variable")
+  @Test("Passes AGENTC_CONFIGURATIONS environment variable")
   func passesConfigurationsEnv() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
     let base = URL(fileURLWithPath: "/tmp/claudec-test-cfgenv-\(UUID().uuidString)")
@@ -441,7 +441,7 @@ struct ConfigurationTests {
     _ = try await session.run()
 
     let env = runtime.lastContainerConfiguration!.environment
-    #expect(env["CLAUDEC_CONFIGURATIONS"] == "claude,swift")
+    #expect(env["AGENTC_CONFIGURATIONS"] == "claude,swift")
   }
 
   @Test("Creates additional mounts from single configuration")
@@ -572,7 +572,7 @@ struct ConfigurationTests {
     _ = try await session.run(entrypoint: ["/bin/bash", "-c", "ls -la"])
 
     let env = runtime.lastContainerConfiguration!.environment
-    #expect(env["CLAUDEC_ENTRYPOINT_OVERRIDE"] == "1")
+    #expect(env["AGENTC_ENTRYPOINT_OVERRIDE"] == "1")
 
     let entrypoint = runtime.lastContainerConfiguration!.entrypoint
     #expect(entrypoint == ["/bin/bash", "-c", "ls -la"])
@@ -602,7 +602,7 @@ struct ConfigurationTests {
     _ = try await session.run()
 
     let env = runtime.lastContainerConfiguration!.environment
-    #expect(env["CLAUDEC_ENTRYPOINT_OVERRIDE"] == nil)
+    #expect(env["AGENTC_ENTRYPOINT_OVERRIDE"] == nil)
 
     let entrypoint = runtime.lastContainerConfiguration!.entrypoint
     #expect(entrypoint == ["--print", "hello"])
@@ -632,7 +632,7 @@ struct ConfigurationTests {
     _ = try await session.run(entrypoint: ["/bin/bash"])
 
     let env = runtime.lastContainerConfiguration!.environment
-    #expect(env["CLAUDEC_ENTRYPOINT_OVERRIDE"] == "1")
+    #expect(env["AGENTC_ENTRYPOINT_OVERRIDE"] == "1")
 
     let entrypoint = runtime.lastContainerConfiguration!.entrypoint
     #expect(entrypoint == ["/bin/bash"])
