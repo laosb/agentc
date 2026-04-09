@@ -7,14 +7,25 @@ import Foundation
 /// Returns `false` if no migration is needed (either ~/.agentc exists, or
 /// ~/.claudec doesn't exist, or the check is suppressed).
 enum MigrationCheck {
+  /// Resolve the user's home directory.
+  ///
+  /// Reads `HOME` from the process environment first (more reliable across
+  /// platforms), falling back to `NSHomeDirectory()`.
+  static var homeDir: URL {
+    if let home = ProcessInfo.processInfo.environment["HOME"], !home.isEmpty {
+      return URL(fileURLWithPath: home)
+    }
+    return URL(fileURLWithPath: NSHomeDirectory())
+  }
+
   /// The agentc data directory: ~/.agentc
   static var agentcDir: URL {
-    URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".agentc")
+    homeDir.appendingPathComponent(".agentc")
   }
 
   /// The legacy claudec data directory: ~/.claudec
   static var claudecDir: URL {
-    URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claudec")
+    homeDir.appendingPathComponent(".claudec")
   }
 
   /// Check if migration from claudec is needed.
