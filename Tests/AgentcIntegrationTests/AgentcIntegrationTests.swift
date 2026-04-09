@@ -48,7 +48,7 @@ struct AgentcIntegrationTests {
   func profileFlag() async throws {
     let profile = "__TEST_agentc_profile_flag"
     let profileHome = URL(fileURLWithPath: NSHomeDirectory())
-      .appendingPathComponent(".claudec/profiles/\(profile)/home")
+      .appendingPathComponent(".agentc/profiles/\(profile)/home")
     try stubProfileHome(at: profileHome)
     defer { try? FileManager.default.removeItem(at: profileHome.deletingLastPathComponent()) }
 
@@ -228,7 +228,7 @@ struct AgentcIntegrationTests {
         "claude",
         "--", "echo", "positional-ok",
       ],
-      env: ["CLAUDEC_CONFIGURATIONS_DIR": configsDir.path]
+      env: [:]
     )
     // The run command should forward "echo positional-ok" to the entrypoint
     // Since we use bootstrap script, it goes through configurations processing

@@ -146,7 +146,7 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
 
     // Environment: pass configurations and optional entrypoint override to bootstrap
     var environment: [String: String] = [:]
-    environment["CLAUDEC_CONFIGURATIONS"] = config.configurations.joined(separator: ",")
+    environment["AGENTC_CONFIGURATIONS"] = config.configurations.joined(separator: ",")
 
     // When an entrypoint override is provided (e.g. "sh" dispatch), the override
     // args replace config.arguments as the container CMD, and a flag tells the
@@ -154,7 +154,7 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
     var containerArgs = config.arguments
     if let override = entrypointOverride {
       containerArgs = override
-      environment["CLAUDEC_ENTRYPOINT_OVERRIDE"] = "1"
+      environment["AGENTC_ENTRYPOINT_OVERRIDE"] = "1"
     }
 
     // Build the final entrypoint (CMD args to the image's or custom ENTRYPOINT)
@@ -191,7 +191,7 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
   // MARK: - Helpers
 
   private func makeTempDir() throws -> URL {
-    let dir = URL(fileURLWithPath: "/tmp/claudec-\(UUID().uuidString.lowercased())")
+    let dir = URL(fileURLWithPath: "/tmp/agentc-\(UUID().uuidString.lowercased())")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     return dir
   }

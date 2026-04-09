@@ -47,7 +47,7 @@ agentc run --profile work           # use a named profile
 agentc run --profile-dir ~/my-prof  # use a custom directory
 ```
 
-Profiles are stored at `~/.claudec/profiles/<name>/home/`.
+Profiles are stored at `~/.agentc/profiles/<name>/home/`.
 
 ### Configurations
 

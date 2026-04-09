@@ -56,7 +56,7 @@ enum ConfigurationsManager {
     }
 
     // Check if update is needed
-    let markerFile = dir.appendingPathComponent(".claudec-last-pull")
+    let markerFile = dir.appendingPathComponent(".agentc-last-pull")
     let now = Date()
     if let attrs = try? FileManager.default.attributesOfItem(atPath: markerFile.path),
       let modified = attrs[.modificationDate] as? Date,

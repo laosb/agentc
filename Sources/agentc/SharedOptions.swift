@@ -5,7 +5,7 @@ struct SharedOptions: ParsableArguments {
   @Option(name: .long, help: "Container runtime: 'docker' or 'apple-container'.")
   var runtime: RuntimeChoice?
 
-  @Option(name: .long, help: "Profile name (stored at ~/.claudec/profiles/<name>/).")
+  @Option(name: .long, help: "Profile name (stored at ~/.agentc/profiles/<name>/).")
   var profile: String?
 
   @Option(name: .long, help: "Custom profile directory path (overrides --profile).")
@@ -74,7 +74,7 @@ extension SharedOptions {
     let home = URL(fileURLWithPath: NSHomeDirectory())
     return (
       name,
-      home.appending(path: ".claudec/profiles/\(name)")
+      home.appending(path: ".agentc/profiles/\(name)")
     )
   }
 
@@ -84,7 +84,7 @@ extension SharedOptions {
       return URL(fileURLWithPath: dir)
     }
     return URL(fileURLWithPath: NSHomeDirectory())
-      .appending(path: ".claudec/configurations")
+      .appending(path: ".agentc/configurations")
   }
 
   /// Resolve workspace URL.

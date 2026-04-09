@@ -15,7 +15,7 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
 
   private let client: DockerAPIClient
   private let endpoint: String
-  private let logger = Logger(label: "com.claudec.docker-runtime")
+  private let logger = Logger(label: "com.agentc.docker-runtime")
 
   public required init(config: ContainerRuntimeConfiguration) {
     self.endpoint = config.endpoint ?? "/var/run/docker.sock"

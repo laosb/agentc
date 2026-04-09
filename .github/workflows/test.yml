@@ -105,14 +105,17 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.claudec/configurations
           touch ~/.claudec/configurations/.claudec-last-pull
+          mkdir -p ~/.agentc
+          cp -r ~/.claudec/configurations ~/.agentc/configurations
+          touch ~/.agentc/configurations/.agentc-last-pull
 
       - name: Cache shared test profiles
         uses: actions/cache@v4
         with:
           path: |
             ~/.claudec/profiles/__TEST_shared_swift
-            ~/.claudec/profiles/__TEST_agentc_shared
-          key: claudec-test-profile-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
+            ~/.agentc/profiles/__TEST_agentc_shared
+          key: test-profiles-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
 
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter 'ClaudecIntegrationTests|AgentcIntegrationTests'
@@ -166,14 +169,17 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.claudec/configurations
           touch ~/.claudec/configurations/.claudec-last-pull
+          mkdir -p ~/.agentc
+          cp -r ~/.claudec/configurations ~/.agentc/configurations
+          touch ~/.agentc/configurations/.agentc-last-pull
 
       - name: Cache shared test profiles
         uses: actions/cache@v4
         with:
           path: |
             ~/.claudec/profiles/__TEST_shared_swift
-            ~/.claudec/profiles/__TEST_agentc_shared
-          key: claudec-test-profile-static-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
+            ~/.agentc/profiles/__TEST_agentc_shared
+          key: test-profiles-static-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
 
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter 'ClaudecIntegrationTests|AgentcIntegrationTests'
