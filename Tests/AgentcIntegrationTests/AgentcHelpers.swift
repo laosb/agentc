@@ -21,9 +21,9 @@ func runAgentc(
   let agentcPath = repoRoot.appendingPathComponent("agentc").path
 
   var environment = ProcessInfo.processInfo.environment
-  // Disable auto-update for tests
-  environment.removeValue(forKey: "CLAUDEC_CHECK_UPDATE")
-  environment.removeValue(forKey: "CLAUDEC_CONTAINER_FLAGS")
+  // Clean environment for agentc tests
+  environment.removeValue(forKey: "AGENTC_CONFIGURATIONS")
+  environment.removeValue(forKey: "AGENTC_ENTRYPOINT_OVERRIDE")
 
   for (key, value) in env {
     environment[key] = value
@@ -102,7 +102,7 @@ func stubProfileHome(at homeDir: URL) throws {
 let sharedProfile: String = {
   let profileName = "__TEST_agentc_shared"
   let profileDir = URL(fileURLWithPath: NSHomeDirectory())
-    .appendingPathComponent(".claudec/profiles/\(profileName)/home")
+    .appendingPathComponent(".agentc/profiles/\(profileName)/home")
   try? stubProfileHome(at: profileDir)
   return profileName
 }()
