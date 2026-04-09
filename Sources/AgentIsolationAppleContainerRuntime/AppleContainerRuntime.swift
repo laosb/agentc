@@ -119,8 +119,8 @@
         reference: imageRef,
         rootfsSizeInBytes: UInt64(8).gib()
       ) { containerConfig in
-        containerConfig.cpus = 4
-        containerConfig.memoryInBytes = UInt64(1536).mib()
+        containerConfig.cpus = configuration.cpuCount
+        containerConfig.memoryInBytes = UInt64(configuration.memoryLimitMiB).mib()
 
         containerConfig.hosts = .default
         containerConfig.useInit = true

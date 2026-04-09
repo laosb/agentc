@@ -34,8 +34,11 @@ public struct IsolationConfig: Sendable {
   /// Whether to allocate a pseudo-TTY. Typically true when stdin is a terminal.
   public var allocateTTY: Bool
 
-  /// Memory limit string understood by the container runtime (e.g. "1536m" = 1.5 GiB).
-  public var memoryLimit: String
+  /// Number of CPUs to allocate to the container.
+  public var cpuCount: Int
+
+  /// Memory limit for the container in mebibytes (MiB).
+  public var memoryLimitMiB: Int
 
   /// Additional host directories to mount inside the container.
   /// Each is mounted at /workspace/<pathIdentifier(canonicalPath)>.
@@ -51,7 +54,8 @@ public struct IsolationConfig: Sendable {
     bootstrapScript: URL? = nil,
     arguments: [String] = [],
     allocateTTY: Bool = false,
-    memoryLimit: String = "1536m",
+    cpuCount: Int = 1,
+    memoryLimitMiB: Int = 1536,
     additionalHostMounts: [URL] = []
   ) {
     self.image = image
@@ -63,7 +67,8 @@ public struct IsolationConfig: Sendable {
     self.bootstrapScript = bootstrapScript
     self.arguments = arguments
     self.allocateTTY = allocateTTY
-    self.memoryLimit = memoryLimit
+    self.cpuCount = cpuCount
+    self.memoryLimitMiB = memoryLimitMiB
     self.additionalHostMounts = additionalHostMounts
   }
 }

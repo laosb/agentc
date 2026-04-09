@@ -320,6 +320,58 @@ struct AgentSessionTests {
     #expect(FileManager.default.fileExists(atPath: profileDir.path, isDirectory: &isDir))
     #expect(isDir.boolValue)
   }
+
+  @Test("Passes cpuCount to container configuration")
+  func passesCpuCount() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let profileDir = URL(fileURLWithPath: "/tmp/claudec-test-\(UUID().uuidString)/home")
+    defer { try? FileManager.default.removeItem(at: profileDir.deletingLastPathComponent()) }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: URL(fileURLWithPath: "/tmp"),
+      arguments: ["echo"],
+      cpuCount: 4
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    _ = try await session.run()
+
+    #expect(runtime.lastContainerConfiguration?.cpuCount == 4)
+  }
+
+  @Test("Passes memoryLimitMiB to container configuration")
+  func passesMemoryLimitMiB() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let profileDir = URL(fileURLWithPath: "/tmp/claudec-test-\(UUID().uuidString)/home")
+    defer { try? FileManager.default.removeItem(at: profileDir.deletingLastPathComponent()) }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: URL(fileURLWithPath: "/tmp"),
+      arguments: ["echo"],
+      memoryLimitMiB: 2048
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    _ = try await session.run()
+
+    #expect(runtime.lastContainerConfiguration?.memoryLimitMiB == 2048)
+  }
+
+  @Test("IsolationConfig defaults: cpuCount is 1, memoryLimitMiB is 1536")
+  func isolationConfigDefaults() {
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: URL(fileURLWithPath: "/tmp/home"),
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: URL(fileURLWithPath: "/tmp")
+    )
+    #expect(config.cpuCount == 1)
+    #expect(config.memoryLimitMiB == 1536)
+  }
 }
 
 // MARK: - Path Segment Tests

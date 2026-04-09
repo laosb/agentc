@@ -85,6 +85,10 @@ public struct ContainerConfiguration: Sendable {
   public var environment: [String: String]
   public var mounts: [Mount]
   public var io: IO
+  /// Number of CPUs to allocate to the container.
+  public var cpuCount: Int
+  /// Memory limit for the container in mebibytes (MiB).
+  public var memoryLimitMiB: Int
 
   public init(
     entrypoint: [String],
@@ -92,7 +96,9 @@ public struct ContainerConfiguration: Sendable {
     workingDirectory: String? = nil,
     environment: [String: String] = [:],
     mounts: [Mount] = [],
-    io: IO = .currentTerminal
+    io: IO = .currentTerminal,
+    cpuCount: Int = 1,
+    memoryLimitMiB: Int = 1536
   ) {
     self.entrypoint = entrypoint
     self.overridesImageEntrypoint = overridesImageEntrypoint
@@ -100,6 +106,8 @@ public struct ContainerConfiguration: Sendable {
     self.environment = environment
     self.mounts = mounts
     self.io = io
+    self.cpuCount = cpuCount
+    self.memoryLimitMiB = memoryLimitMiB
   }
 
   public struct Mount: Sendable {

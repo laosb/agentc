@@ -174,7 +174,9 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
       workingDirectory: wsContainerPath,
       environment: environment,
       mounts: mounts,
-      io: io
+      io: io,
+      cpuCount: config.cpuCount,
+      memoryLimitMiB: config.memoryLimitMiB
     )
 
     let container = try await runtime.runContainer(

@@ -91,6 +91,24 @@
       let image = DockerImage(ref: "test:latest", digest: "sha256:abc")
       let _: any Sendable = image
     }
+
+    @Test("ContainerConfiguration cpuCount and memoryLimitMiB defaults")
+    func containerConfigurationDefaults() {
+      let config = ContainerConfiguration(entrypoint: ["echo"])
+      #expect(config.cpuCount == 1)
+      #expect(config.memoryLimitMiB == 1536)
+    }
+
+    @Test("ContainerConfiguration accepts custom cpuCount and memoryLimitMiB")
+    func containerConfigurationCustomValues() {
+      let config = ContainerConfiguration(
+        entrypoint: ["echo"],
+        cpuCount: 4,
+        memoryLimitMiB: 4096
+      )
+      #expect(config.cpuCount == 4)
+      #expect(config.memoryLimitMiB == 4096)
+    }
   }
 
   // MARK: - DockerAPIClient URL Construction Tests

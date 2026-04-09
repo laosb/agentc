@@ -57,8 +57,11 @@ struct SharedOptions: ParsableArguments {
   @Option(name: .long, help: "Docker Engine API endpoint (socket path or tcp://host:port).")
   var dockerEndpoint: String?
 
-  @Option(name: .long, help: "Container memory limit (e.g. '1536m').")
-  var memoryLimit: String = "1536m"
+  @Option(name: .long, help: "Number of CPUs to allocate to the container.")
+  var cpuCount: Int = 1
+
+  @Option(name: .long, help: "Container memory limit in MiB (e.g. 1536 = 1.5 GiB).")
+  var memoryLimitMiB: Int = 1536
 
   @Flag(name: .long, help: "Skip the migration check for legacy ~/.claudec data.")
   var suppressMigrationFromClaudec: Bool = false

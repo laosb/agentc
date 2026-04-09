@@ -268,4 +268,42 @@ struct AgentcIntegrationTests {
     // Since we use bootstrap script, it goes through configurations processing
     #expect(result.exitCode == 0)
   }
+
+  @Test("--cpu-count flag is accepted and used")
+  func cpuCountFlag() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--bootstrap-script", bootstrapScriptPath,
+        "--no-update-image",
+        "--cpu-count", "2",
+        "--", "nproc",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    // nproc should report the number of CPUs we requested
+    let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    #expect(reported == "2")
+  }
+
+  @Test("--memory-limit-mib flag is accepted")
+  func memoryLimitMiBFlag() async throws {
+    // Use a distinct, recognizable limit (512 MiB = 536870912 bytes)
+    let limitMiB = 512
+    let limitBytes = limitMiB * 1024 * 1024
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--bootstrap-script", bootstrapScriptPath,
+        "--no-update-image",
+        "--memory-limit-mib", "\(limitMiB)",
+        "--", "cat", "/sys/fs/cgroup/memory.max",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    #expect(reported == "\(limitBytes)")
+  }
 }

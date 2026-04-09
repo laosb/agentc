@@ -69,7 +69,8 @@ struct RunCommand: AsyncParsableCommand {
       bootstrapScript: bootstrapScript,
       arguments: forwardedArgs,
       allocateTTY: allocateTTY,
-      memoryLimit: options.memoryLimit,
+      cpuCount: options.cpuCount,
+      memoryLimitMiB: options.memoryLimitMiB,
       additionalHostMounts: options.additionalMount.map { URL(fileURLWithPath: $0) }
     )
 

@@ -115,8 +115,8 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
       AttachStderr: true,
       HostConfig: DockerHostConfig(
         Binds: binds.isEmpty ? nil : binds,
-        Memory: 1_610_612_736,  // 1.5 GiB
-        NanoCpus: 4_000_000_000,  // 4 CPUs
+        Memory: Int64(configuration.memoryLimitMiB) * 1024 * 1024,
+        NanoCpus: Int64(configuration.cpuCount) * 1_000_000_000,
         Init: true
       )
     )
