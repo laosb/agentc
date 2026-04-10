@@ -20,7 +20,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "echo", "hello",
       ]
@@ -35,7 +35,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "echo", "hello-from-sh",
       ]
@@ -56,7 +56,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", profile,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "echo", "ok",
       ]
@@ -79,7 +79,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile-dir", dir.path,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "cat", "/home/agent/sentinel.txt",
       ]
@@ -104,7 +104,7 @@ struct AgentcIntegrationTests {
         "sh",
         "--profile", sharedProfile,
         "--workspace", ws.path,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "cat", "\(containerPath)/probe.txt",
       ]
@@ -126,7 +126,7 @@ struct AgentcIntegrationTests {
         "sh",
         "--profile", sharedProfile,
         "--workspace", ws.path,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "pwd",
       ]
@@ -135,7 +135,7 @@ struct AgentcIntegrationTests {
     #expect(result.output.contains(containerPath))
   }
 
-  @Test("--exclude-folders hides sub-folder contents")
+  @Test("--exclude hides sub-folder contents")
   func excludeFolders() async throws {
     let ws = URL(fileURLWithPath: "/tmp/__TEST_agentc_excl.\(UUID().uuidString.prefix(6))")
     let secretDir = ws.appendingPathComponent("secret")
@@ -152,8 +152,8 @@ struct AgentcIntegrationTests {
         "sh",
         "--profile", sharedProfile,
         "--workspace", ws.path,
-        "--exclude-folders", "secret",
-        "--bootstrap-script", bootstrapScriptPath,
+        "--exclude", "secret",
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "ls", "\(containerPath)/secret",
       ]
@@ -162,7 +162,7 @@ struct AgentcIntegrationTests {
     #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
   }
 
-  @Test("--bootstrap-script overrides entrypoint")
+  @Test("--bootstrap overrides entrypoint")
   func bootstrapScriptFlag() async throws {
     let customBootstrap = URL(
       fileURLWithPath: "/tmp/__TEST_agentc_bs.\(UUID().uuidString.prefix(6))")
@@ -182,7 +182,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap-script", customBootstrap.path,
+        "--bootstrap", customBootstrap.path,
         "--no-update-image",
         "--", "echo", "ok",
       ]
@@ -197,7 +197,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "command", "-v", "bun",
       ]
@@ -212,7 +212,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "cat", "/etc/hosts",
       ]
@@ -228,7 +228,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "cat", "/proc/1/cmdline",
       ]
@@ -240,8 +240,8 @@ struct AgentcIntegrationTests {
     #expect(cmdline.contains("init"))
   }
 
-  @Test("Positional configurations argument works for run")
-  func positionalConfigurations() async throws {
+  @Test("--configurations flag works for run")
+  func configurationsFlag() async throws {
     let tempDir = URL(fileURLWithPath: "/tmp/__TEST_agentc_posconf.\(UUID().uuidString.prefix(6))")
     defer { try? FileManager.default.removeItem(at: tempDir) }
 
@@ -250,34 +250,33 @@ struct AgentcIntegrationTests {
 
     try createLocalConfigRepo(at: localRepo)
 
-    // `agentc run claude` with custom configs dir/repo → uses the "claude" config from our local repo
+    // `agentc run --configurations claude` with custom configs dir/repo
     let result = await runAgentc(
       args: [
         "run",
         "--profile", sharedProfile,
         "--configurations-dir", configsDir.path,
         "--configurations-repo", localRepo.path,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
-        "claude",
-        "--", "echo", "positional-ok",
+        "--configurations", "claude",
+        "echo", "configurations-ok",
       ],
       env: [:]
     )
-    // The run command should forward "echo positional-ok" to the entrypoint
-    // Since we use bootstrap script, it goes through configurations processing
+    // The run command should forward "echo configurations-ok" to the entrypoint
     #expect(result.exitCode == 0)
   }
 
-  @Test("--cpu-count flag is accepted and used")
+  @Test("--cpus flag is accepted and used")
   func cpuCountFlag() async throws {
     let result = await runAgentc(
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
-        "--cpu-count", "2",
+        "--cpus", "2",
         "--", "nproc",
       ]
     )
@@ -287,8 +286,8 @@ struct AgentcIntegrationTests {
     #expect(reported == "2")
   }
 
-  @Test("--memory-limit-mib flag is accepted")
-  func memoryLimitMiBFlag() async throws {
+  @Test("--memory-mib flag is accepted")
+  func memoryMiBFlag() async throws {
     // Use a distinct, recognizable limit (512 MiB = 536870912 bytes)
     let limitMiB = 512
     let limitBytes = limitMiB * 1024 * 1024
@@ -296,14 +295,125 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap-script", bootstrapScriptPath,
+        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
-        "--memory-limit-mib", "\(limitMiB)",
+        "--memory-mib", "\(limitMiB)",
         "--", "cat", "/sys/fs/cgroup/memory.max",
       ]
     )
     #expect(result.exitCode == 0)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "\(limitBytes)")
+  }
+
+  // MARK: - Short flag aliases
+
+  @Test("-p short flag works as --profile alias")
+  func shortProfile() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "-p", sharedProfile,
+        "--bootstrap", bootstrapScriptPath,
+        "--no-update-image",
+        "--", "echo", "short-p",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout.contains("short-p"))
+  }
+
+  @Test("-w short flag works as --workspace alias")
+  func shortWorkspace() async throws {
+    let ws = URL(fileURLWithPath: "/tmp/__TEST_agentc_shortw.\(UUID().uuidString.prefix(6))")
+    try FileManager.default.createDirectory(at: ws, withIntermediateDirectories: true)
+    try "short_w_content".write(
+      to: ws.appendingPathComponent("probe.txt"),
+      atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: ws) }
+
+    let containerPath = workspaceContainerPath(for: ws)
+
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "-p", sharedProfile,
+        "-w", ws.path,
+        "--bootstrap", bootstrapScriptPath,
+        "--no-update-image",
+        "--", "cat", "\(containerPath)/probe.txt",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.output.contains("short_w_content"))
+  }
+
+  @Test("-c short flag works as --configurations alias")
+  func shortConfigurations() async throws {
+    let tempDir = URL(fileURLWithPath: "/tmp/__TEST_agentc_shortc.\(UUID().uuidString.prefix(6))")
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let configsDir = tempDir.appendingPathComponent("configurations")
+    let localRepo = tempDir.appendingPathComponent("repo")
+
+    try createLocalConfigRepo(at: localRepo)
+
+    let result = await runAgentc(
+      args: [
+        "run",
+        "-p", sharedProfile,
+        "--configurations-dir", configsDir.path,
+        "--configurations-repo", localRepo.path,
+        "--bootstrap", bootstrapScriptPath,
+        "--no-update-image",
+        "-c", "claude",
+        "echo", "short-c-ok",
+      ],
+      env: [:]
+    )
+    #expect(result.exitCode == 0)
+  }
+
+  // MARK: - Remaining arguments parsing
+
+  @Test("sh command accepts arguments without -- separator")
+  func shRemainingWithoutSeparator() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--bootstrap", bootstrapScriptPath,
+        "--no-update-image",
+        "echo", "no-separator",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout.contains("no-separator"))
+  }
+
+  @Test("run command accepts entrypoint arguments without -- separator")
+  func runRemainingWithoutSeparator() async throws {
+    let tempDir = URL(fileURLWithPath: "/tmp/__TEST_agentc_remain.\(UUID().uuidString.prefix(6))")
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let configsDir = tempDir.appendingPathComponent("configurations")
+    let localRepo = tempDir.appendingPathComponent("repo")
+
+    try createLocalConfigRepo(at: localRepo)
+
+    let result = await runAgentc(
+      args: [
+        "run",
+        "--profile", sharedProfile,
+        "--configurations-dir", configsDir.path,
+        "--configurations-repo", localRepo.path,
+        "--bootstrap", bootstrapScriptPath,
+        "--no-update-image",
+        "--configurations", "claude",
+        "echo", "remaining-ok",
+      ],
+      env: [:]
+    )
+    #expect(result.exitCode == 0)
   }
 }

@@ -2,16 +2,16 @@ import ArgumentParser
 import Foundation
 
 struct SharedOptions: ParsableArguments {
-  @Option(name: .long, help: "Container runtime: 'docker' or 'apple-container'.")
+  @Option(name: .shortAndLong, help: "Container runtime.")
   var runtime: RuntimeChoice?
 
-  @Option(name: .long, help: "Profile name (stored at ~/.agentc/profiles/<name>/).")
+  @Option(name: .shortAndLong, help: "Profile name (stored at ~/.agentc/profiles/<name>/).")
   var profile: String?
 
   @Option(name: .long, help: "Custom profile directory path (overrides --profile).")
   var profileDir: String?
 
-  @Option(name: .long, help: "Container image reference.")
+  @Option(name: .shortAndLong, help: "Container image reference.")
   var image: String = "ghcr.io/laosb/claudec:latest"
 
   @Flag(
@@ -24,13 +24,15 @@ struct SharedOptions: ParsableArguments {
   @Flag(name: .long, help: "Keep old image after a successful update pull.")
   var keepOldImage: Bool = false
 
-  @Option(name: .long, help: "Host directory to mount as the workspace.")
+  @Option(name: .shortAndLong, help: "Host directory to mount as the workspace.")
   var workspace: String?
 
-  @Option(name: .long, help: "Comma-separated workspace sub-folders to mask with empty overlays.")
+  @Option(
+    name: .customLong("exclude"),
+    help: "Comma-separated workspace sub-folders to mask with empty overlays.")
   var excludeFolders: String?
 
-  @Option(name: .long, help: "Path to a custom bootstrap/entrypoint script.")
+  @Option(name: .customLong("bootstrap"), help: "Path to a custom bootstrap/entrypoint script.")
   var bootstrapScript: String?
 
   @Option(
@@ -57,10 +59,12 @@ struct SharedOptions: ParsableArguments {
   @Option(name: .long, help: "Docker Engine API endpoint (socket path or tcp://host:port).")
   var dockerEndpoint: String?
 
-  @Option(name: .long, help: "Number of CPUs to allocate to the container.")
+  @Option(name: .customLong("cpus"), help: "Number of CPUs to allocate to the container.")
   var cpuCount: Int = 1
 
-  @Option(name: .customLong("memory-limit-mib"), help: "Container memory limit in MiB (e.g. 1536 = 1.5 GiB).")
+  @Option(
+    name: .customLong("memory-mib"),
+    help: "Container memory limit in MiB (e.g. 1536 = 1.5 GiB).")
   var memoryLimitMiB: Int = 1536
 
   @Flag(name: .long, help: "Skip the migration check for legacy ~/.claudec data.")

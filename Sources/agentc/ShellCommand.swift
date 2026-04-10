@@ -15,20 +15,19 @@ struct ShellCommand: AsyncParsableCommand {
     commandName: "sh",
     abstract: "Open a shell or run a command inside the container",
     discussion: """
-      Without arguments, opens an interactive bash shell. With arguments \
-      after '--', runs the specified command.
+      Without arguments, opens an interactive bash shell. With arguments, runs the specified command.
 
       Examples:
         agentc sh                           # interactive shell
-        agentc sh -- echo hello             # run a command
+        agentc sh echo hello                # run a command
         agentc sh -- ls -la /home/agent     # run with flags
-        agentc sh -c claude -- cat file.txt # specific configuration
+        agentc sh -c claude cat file.txt    # specific configuration
       """
   )
 
   @OptionGroup var options: SharedOptions
 
-  @Argument(parsing: .captureForPassthrough, help: "Command and arguments to run.")
+  @Argument(parsing: .remaining, help: "Command and arguments to run.")
   var command: [String] = []
 
   mutating func run() async throws {
@@ -61,13 +60,11 @@ struct ShellCommand: AsyncParsableCommand {
     let bootstrapScript: URL? = options.bootstrapScript.map { URL(fileURLWithPath: $0) }
 
     // Build the entrypoint override for shell dispatch
-    // captureForPassthrough includes the "--" terminator; strip it.
-    let args = command.drop(while: { $0 == "--" })
     let entrypointOverride: [String]
-    if args.isEmpty {
+    if command.isEmpty {
       entrypointOverride = ["/bin/bash"]
     } else {
-      entrypointOverride = ["/bin/bash", "-c", args.joined(separator: " ")]
+      entrypointOverride = ["/bin/bash", "-c", command.joined(separator: " ")]
     }
 
     let isolationConfig = IsolationConfig(
@@ -93,37 +90,17 @@ struct ShellCommand: AsyncParsableCommand {
   private func runShellSession(
     config: IsolationConfig, entrypoint: [String]
   ) async throws -> Int32 {
-    let runtime = RuntimeChoice.resolve(explicit: options.runtime)
-
     let storagePath =
       FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
       .first!
       .appendingPathComponent("sb.lao.agentc")
       .path
 
-    switch runtime {
-    #if ContainerRuntimeAppleContainer
-      case .appleContainer:
-        let runtimeConfig = ContainerRuntimeConfiguration(storagePath: storagePath)
-        let runtime = AppleContainerRuntime(config: runtimeConfig)
-        defer { Task { try? await runtime.shutdown() } }
-        let session = AgentSession(config: config, runtime: runtime)
-        return try await session.run(entrypoint: entrypoint)
-    #endif
-    #if ContainerRuntimeDocker
-      case .docker:
-        let runtimeConfig = ContainerRuntimeConfiguration(
-          storagePath: storagePath, endpoint: options.dockerEndpoint)
-        let runtime = DockerRuntime(config: runtimeConfig)
-        defer { Task { try? await runtime.shutdown() } }
-        let session = AgentSession(config: config, runtime: runtime)
-        return try await session.run(entrypoint: entrypoint)
-    #endif
-    default:
-      fatalError(
-        "agentc: runtime '\(runtime.rawValue)' is not available. "
-          + "Rebuild with the appropriate ContainerRuntime* trait enabled."
-      )
-    }
+    let runtimeConfig = ContainerRuntimeConfiguration(
+      storagePath: storagePath, endpoint: options.dockerEndpoint)
+    let runtime = DockerRuntime(config: runtimeConfig)
+    defer { Task { try? await runtime.shutdown() } }
+    let session = AgentSession(config: config, runtime: runtime)
+    return try await session.run(entrypoint: entrypoint)
   }
 }
