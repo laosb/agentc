@@ -117,6 +117,7 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
         Binds: binds.isEmpty ? nil : binds,
         Memory: Int64(configuration.memoryLimitMiB) * 1024 * 1024,
         NanoCpus: Int64(configuration.cpuCount) * 1_000_000_000,
+        CpusetCpus: "0-\(configuration.cpuCount - 1)",
         Init: true
       )
     )

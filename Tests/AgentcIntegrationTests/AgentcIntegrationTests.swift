@@ -292,6 +292,8 @@ struct AgentcIntegrationTests {
     // Use a distinct, recognizable limit (512 MiB = 536870912 bytes)
     let limitMiB = 512
     let limitBytes = limitMiB * 1024 * 1024
+    // cgroup v2 uses /sys/fs/cgroup/memory.max; cgroup v1 uses
+    // /sys/fs/cgroup/memory/memory.limit_in_bytes. Try both.
     let result = await runAgentc(
       args: [
         "sh",
@@ -299,7 +301,8 @@ struct AgentcIntegrationTests {
         "--bootstrap-script", bootstrapScriptPath,
         "--no-update-image",
         "--memory-limit-mib", "\(limitMiB)",
-        "--", "cat", "/sys/fs/cgroup/memory.max",
+        "--", "sh", "-c",
+        "cat /sys/fs/cgroup/memory.max 2>/dev/null || cat /sys/fs/cgroup/memory/memory.limit_in_bytes",
       ]
     )
     #expect(result.exitCode == 0)

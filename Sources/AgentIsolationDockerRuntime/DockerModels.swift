@@ -41,6 +41,7 @@ struct DockerHostConfig: Codable, Sendable {
   var Binds: [String]?
   var Memory: Int64?
   var NanoCpus: Int64?
+  var CpusetCpus: String?
   var Init: Bool?
 }
 
