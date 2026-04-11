@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and (on macOS with Apple Container support) sign the claudec and agentc binaries.
+# Build and (on macOS with Apple Container support) sign the agentc binary.
 #
 # Usage:
 #   ./build.sh [--debug] [--runtimes apple-container,docker] [--swift-sdk SDK]
@@ -20,7 +20,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLAUDEC_ENTITLEMENTS="${SCRIPT_DIR}/signing/claudec.entitlements"
 AGENTC_ENTITLEMENTS="${SCRIPT_DIR}/signing/agentc.entitlements"
 
 CONFIG="release"
@@ -101,7 +100,7 @@ if [[ -z "${TRAITS}" ]]; then
     exit 1
 fi
 
-echo "Building claudec & agentc (${CONFIG}) with runtimes: ${RUNTIMES}..."
+echo "Building agentc (${CONFIG}) with runtimes: ${RUNTIMES}..."
 echo "  Traits: ${TRAITS}"
 if [[ -n "${SWIFT_SDK}" ]]; then
     echo "  Swift SDK: ${SWIFT_SDK}"
@@ -144,16 +143,13 @@ else
     BUILD_DIR="${SCRIPT_DIR}/.build/${CONFIG}"
 fi
 
-for PRODUCT in claudec agentc; do
-    BUILT_BINARY="${BUILD_DIR}/${PRODUCT}"
-    OUTPUT_BINARY="${SCRIPT_DIR}/${PRODUCT}"
-    ENTITLEMENTS="${SCRIPT_DIR}/signing/${PRODUCT}.entitlements"
+BUILT_BINARY="${BUILD_DIR}/agentc"
+OUTPUT_BINARY="${SCRIPT_DIR}/agentc"
 
-    if [[ "${NEED_SIGN}" == true ]] && [[ "$(uname -s)" == "Darwin" ]] && [[ -z "${SWIFT_SDK}" ]]; then
-        echo "Signing ${PRODUCT} with virtualization entitlement..."
-        codesign --sign - --entitlements "${ENTITLEMENTS}" --force "${BUILT_BINARY}"
-    fi
+if [[ "${NEED_SIGN}" == true ]] && [[ "$(uname -s)" == "Darwin" ]] && [[ -z "${SWIFT_SDK}" ]]; then
+    echo "Signing agentc with virtualization entitlement..."
+    codesign --sign - --entitlements "${AGENTC_ENTITLEMENTS}" --force "${BUILT_BINARY}"
+fi
 
-    cp "${BUILT_BINARY}" "${OUTPUT_BINARY}"
-    echo "Done → ${OUTPUT_BINARY}"
-done
+cp "${BUILT_BINARY}" "${OUTPUT_BINARY}"
+echo "Done → ${OUTPUT_BINARY}"

@@ -215,7 +215,7 @@
       }
 
       // 3. Download kernel from kata-containers
-      fputs("claudec: downloading kernel (one-time setup)...\n", stderr)
+      fputs("agentc: downloading kernel (one-time setup)...\n", stderr)
       let tarURL = URL(
         string:
           "https://github.com/kata-containers/kata-containers/releases/download/3.26.0/kata-static-3.26.0-arm64.tar.zst"

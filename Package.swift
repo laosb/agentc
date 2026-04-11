@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-  name: "claudec",
+  name: "agentc",
   platforms: [.macOS("15")],
   products: [
     .library(name: "AgentIsolation", targets: ["AgentIsolation"]),
@@ -10,7 +10,6 @@ let package = Package(
       name: "AgentIsolationAppleContainerRuntime", targets: ["AgentIsolationAppleContainerRuntime"]),
     .library(
       name: "AgentIsolationDockerRuntime", targets: ["AgentIsolationDockerRuntime"]),
-    .executable(name: "claudec", targets: ["claudec"]),
     .executable(name: "agentc", targets: ["agentc"]),
   ],
   traits: [
@@ -61,16 +60,6 @@ let package = Package(
       ]
     ),
     .executableTarget(
-      name: "claudec",
-      dependencies: [
-        "AgentIsolation",
-        .target(name: "AgentIsolationAppleContainerRuntime", condition: .when(traits: ["ContainerRuntimeAppleContainer"])),
-        .target(name: "AgentIsolationDockerRuntime", condition: .when(traits: ["ContainerRuntimeDocker"])),
-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
-        .product(name: "Logging", package: "swift-log"),
-      ]
-    ),
-    .executableTarget(
       name: "agentc",
       dependencies: [
         "AgentIsolation",
@@ -92,12 +81,6 @@ let package = Package(
       dependencies: [
         "AgentIsolation",
         .target(name: "AgentIsolationDockerRuntime", condition: .when(traits: ["ContainerRuntimeDocker"])),
-      ]
-    ),
-    .testTarget(
-      name: "ClaudecIntegrationTests",
-      dependencies: [
-        .product(name: "Crypto", package: "swift-crypto"),
       ]
     ),
     .testTarget(

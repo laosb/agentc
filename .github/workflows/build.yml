@@ -61,19 +61,11 @@ jobs:
       - name: Verify static linking
         if: matrix.swift-sdk
         run: |
-          file ./claudec | tee /dev/stderr | grep -q "statically linked"
           file ./agentc | tee /dev/stderr | grep -q "statically linked"
 
-      - name: Package binaries
+      - name: Package binary
         run: |
-          tar czf "claudec-${{ matrix.variant }}.tar.gz" claudec
           tar czf "agentc-${{ matrix.variant }}.tar.gz" agentc
-
-      - name: Upload claudec artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: claudec-${{ matrix.variant }}
-          path: claudec-${{ matrix.variant }}.tar.gz
 
       - name: Upload agentc artifact
         uses: actions/upload-artifact@v4

@@ -63,7 +63,7 @@ agentc run -c copilot
 ## Architecture
 
 ```
-agentc / claudec (CLI)
+agentc (CLI)
   └─ AgentIsolation                          (runtime-agnostic orchestration)
   └─ AgentIsolationAppleContainerRuntime     (Apple Containerization, macOS)
   └─ AgentIsolationDockerRuntime             (Docker Engine API, macOS/Linux)
@@ -85,9 +85,23 @@ swift test --filter AgentIsolationTests        # unit tests
 
 Set `BUILD_VERSION` and `BUILD_GIT_SHA` environment variables before `build.sh` to inject version info into the `agentc version` output.
 
-## Legacy: claudec
+## Migrating from claudec
 
-The original `claudec` CLI is still included for backward compatibility. It uses environment variables for configuration. See [docs/CLAUDEC_README.md](./docs/CLAUDEC_README.md) for its documentation.
+The `claudec` CLI was removed in v1.0.0-alpha.8. To migrate your profiles and configurations:
+
+```sh
+agentc migrate-from-claudec
+```
+
+If you have scripts or muscle memory that use the `claudec` command, you can set up a shell alias:
+
+```sh
+# bash / zsh
+alias claudec='agentc run --'
+
+# fish
+alias claudec 'agentc run --'
+```
 
 ## License
 

@@ -103,24 +103,20 @@ jobs:
 
       - name: Pre-clone configurations repo
         run: |
-          git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.claudec/configurations
-          touch ~/.claudec/configurations/.claudec-last-pull
           mkdir -p ~/.agentc
-          cp -r ~/.claudec/configurations ~/.agentc/configurations
+          git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.agentc/configurations
           touch ~/.agentc/configurations/.agentc-last-pull
 
       - name: Cache shared test profiles
         uses: actions/cache@v4
         with:
           path: |
-            ~/.claudec/profiles/__TEST_shared_swift
             ~/.agentc/profiles/__TEST_agentc_shared
           key: test-profiles-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
 
       - name: Run integration tests
-        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter 'ClaudecIntegrationTests|AgentcIntegrationTests'
+        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests
         env:
-          CLAUDEC_CONTAINER_RUNTIME: docker
           VERBOSE: 1
 
   integration-tests-static:
@@ -162,27 +158,22 @@ jobs:
 
       - name: Verify static linking
         run: |
-          file ./claudec | tee /dev/stderr | grep -q "statically linked"
           file ./agentc | tee /dev/stderr | grep -q "statically linked"
 
       - name: Pre-clone configurations repo
         run: |
-          git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.claudec/configurations
-          touch ~/.claudec/configurations/.claudec-last-pull
           mkdir -p ~/.agentc
-          cp -r ~/.claudec/configurations ~/.agentc/configurations
+          git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.agentc/configurations
           touch ~/.agentc/configurations/.agentc-last-pull
 
       - name: Cache shared test profiles
         uses: actions/cache@v4
         with:
           path: |
-            ~/.claudec/profiles/__TEST_shared_swift
             ~/.agentc/profiles/__TEST_agentc_shared
           key: test-profiles-static-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
 
       - name: Run integration tests
-        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter 'ClaudecIntegrationTests|AgentcIntegrationTests'
+        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests
         env:
-          CLAUDEC_CONTAINER_RUNTIME: docker
           VERBOSE: 1
