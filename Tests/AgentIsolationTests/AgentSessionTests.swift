@@ -174,12 +174,12 @@ struct AgentSessionTests {
     #expect(excludeMounts.count == 2)
   }
 
-  @Test("Bootstrap script overrides entrypoint")
-  func bootstrapScript() async throws {
+  @Test("Bootstrap file overrides entrypoint")
+  func bootstrapFileOverridesEntrypoint() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
     let profileDir = URL(fileURLWithPath: "/tmp/claudec-test-\(UUID().uuidString)/home")
 
-    let bootstrapFile = URL(fileURLWithPath: "/tmp/claudec-test-bootstrap-\(UUID().uuidString).sh")
+    let bootstrapFile = URL(fileURLWithPath: "/tmp/claudec-test-bootstrap-\(UUID().uuidString)")
     try "#!/bin/bash\necho hello".write(to: bootstrapFile, atomically: true, encoding: .utf8)
     defer {
       try? FileManager.default.removeItem(at: profileDir.deletingLastPathComponent())
@@ -191,24 +191,26 @@ struct AgentSessionTests {
       profileHomeDir: profileDir,
       workspace: URL(fileURLWithPath: "/tmp"),
       configurationsDir: URL(fileURLWithPath: "/tmp"),
-      bootstrapScript: bootstrapFile,
+      bootstrapMode: .file(bootstrapFile),
       arguments: ["sh", "echo", "ok"]
     )
     let session = AgentSession(config: config, runtime: runtime)
     _ = try await session.run()
 
     let entrypoint = runtime.lastContainerConfiguration!.entrypoint
-    #expect(entrypoint.first == "/entrypoint-bootstrap/entrypoint.sh")
+    #expect(entrypoint.first == "/entrypoint-bootstrap/bootstrap")
     #expect(entrypoint.contains("sh"))
 
     // Should have a mount for the bootstrap dir
     let mounts = runtime.lastContainerConfiguration!.mounts
     let bootstrapMount = mounts.first { $0.containerPath == "/entrypoint-bootstrap" }
     #expect(bootstrapMount != nil)
+
+    #expect(runtime.lastContainerConfiguration!.overridesImageEntrypoint == true)
   }
 
-  @Test("Without bootstrap script, entrypoint is just arguments")
-  func noBootstrapScript() async throws {
+  @Test("imageDefault bootstrap mode uses image's own entrypoint")
+  func imageDefaultBootstrap() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
     let profileDir = URL(fileURLWithPath: "/tmp/claudec-test-\(UUID().uuidString)/home")
     defer { try? FileManager.default.removeItem(at: profileDir.deletingLastPathComponent()) }
@@ -218,6 +220,7 @@ struct AgentSessionTests {
       profileHomeDir: profileDir,
       workspace: URL(fileURLWithPath: "/tmp"),
       configurationsDir: URL(fileURLWithPath: "/tmp"),
+      bootstrapMode: .imageDefault,
       arguments: ["echo", "hello"]
     )
     let session = AgentSession(config: config, runtime: runtime)
@@ -225,6 +228,12 @@ struct AgentSessionTests {
 
     let entrypoint = runtime.lastContainerConfiguration!.entrypoint
     #expect(entrypoint == ["echo", "hello"])
+
+    let mounts = runtime.lastContainerConfiguration!.mounts
+    let bootstrapMount = mounts.first { $0.containerPath == "/entrypoint-bootstrap" }
+    #expect(bootstrapMount == nil)
+
+    #expect(runtime.lastContainerConfiguration!.overridesImageEntrypoint == false)
   }
 
   @Test("Returns container exit code")

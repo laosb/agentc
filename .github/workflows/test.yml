@@ -85,8 +85,10 @@ jobs:
         include:
           - os: ubuntu-24.04
             arch: x64
+            swift-sdk: x86_64-swift-linux-musl
           - os: ubuntu-24.04-arm
             arch: arm64
+            swift-sdk: aarch64-swift-linux-musl
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -106,6 +108,17 @@ jobs:
           restore-keys: |
             spm-integration-${{ matrix.os }}-${{ matrix.arch }}-
 
+      - name: Cache Static Linux SDK
+        id: cache-static-sdk
+        uses: actions/cache@v4
+        with:
+          path: ~/.swiftpm/swift-sdks
+          key: static-sdk-${{ matrix.swift-sdk }}-6.3
+
+      - name: Install Static Linux SDK
+        if: steps.cache-static-sdk.outputs.cache-hit != 'true'
+        run: swift sdk install https://download.swift.org/swift-6.3-release/static-sdk/swift-6.3-RELEASE/swift-6.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz --checksum d2078b69bdeb5c31202c10e9d8a11d6f66f82938b51a4b75f032ccb35c4c286c
+
       - name: Download base image
         uses: actions/download-artifact@v4
         with:
@@ -116,6 +129,19 @@ jobs:
 
       - name: Build binary
         run: bash build.sh --runtimes docker
+
+      - name: Build bootstrap binary
+        run: |
+          swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}"
+          mkdir -p ~/.agentc/bin
+          cp ".build/${{ matrix.swift-sdk }}/release/agentc-bootstrap" ~/.agentc/bin/bootstrap
+          chmod +x ~/.agentc/bin/bootstrap
+
+      - name: Pre-pull base images for tests
+        run: |
+          docker pull docker.io/library/debian:latest
+          docker pull docker.io/library/alpine:latest
+          docker pull docker.io/library/buildpack-deps:scm
 
       - name: Pre-clone configurations repo
         run: |
@@ -128,7 +154,7 @@ jobs:
         with:
           path: |
             ~/.agentc/profiles/__TEST_agentc_shared
-          key: test-profiles-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
+          key: test-profiles-${{ matrix.arch }}-${{ hashFiles('Sources/agentc-bootstrap/**', 'Dockerfile') }}
 
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests
@@ -192,6 +218,19 @@ jobs:
         run: |
           file ./agentc | tee /dev/stderr | grep -q "statically linked"
 
+      - name: Build bootstrap binary
+        run: |
+          swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}"
+          mkdir -p ~/.agentc/bin
+          cp ".build/${{ matrix.swift-sdk }}/release/agentc-bootstrap" ~/.agentc/bin/bootstrap
+          chmod +x ~/.agentc/bin/bootstrap
+
+      - name: Pre-pull base images for tests
+        run: |
+          docker pull docker.io/library/debian:latest
+          docker pull docker.io/library/alpine:latest
+          docker pull docker.io/library/buildpack-deps:scm
+
       - name: Pre-clone configurations repo
         run: |
           mkdir -p ~/.agentc
@@ -203,7 +242,7 @@ jobs:
         with:
           path: |
             ~/.agentc/profiles/__TEST_agentc_shared
-          key: test-profiles-static-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
+          key: test-profiles-static-${{ matrix.arch }}-${{ hashFiles('Sources/agentc-bootstrap/**', 'Dockerfile') }}
 
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests

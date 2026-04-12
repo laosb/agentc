@@ -132,7 +132,7 @@ else
 fi
 swift build "${BUILD_ARGS[@]}"
 
-# Restore original BuildInfo.swift if we modified it
+# Restore generated Swift files
 if [[ -n "${BUILDINFO_ORIGINAL}" ]]; then
     echo "${BUILDINFO_ORIGINAL}" > "${BUILDINFO_FILE}"
 fi

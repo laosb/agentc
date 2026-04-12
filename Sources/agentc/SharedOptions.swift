@@ -1,3 +1,4 @@
+import AgentIsolation
 import ArgumentParser
 import Foundation
 
@@ -34,6 +35,12 @@ struct SharedOptions: ParsableArguments {
 
   @Option(name: .customLong("bootstrap"), help: "Path to a custom bootstrap/entrypoint script.")
   var bootstrapScript: String?
+
+  @Flag(
+    name: .customLong("respect-image-entrypoint"),
+    help: "Use the container image's built-in entrypoint instead of the agentc bootstrap."
+  )
+  var respectImageEntrypoint: Bool = false
 
   @Option(
     name: .long,
@@ -129,6 +136,20 @@ extension SharedOptions {
     }
     // 3. Default
     return ["claude"]
+  }
+
+  /// Resolve the bootstrap mode from CLI flags and installed binary.
+  ///
+  /// Priority: --respect-image-entrypoint → --bootstrap → installed binary (auto-download).
+  func resolveBootstrapMode() throws -> BootstrapMode {
+    if respectImageEntrypoint {
+      return .imageDefault
+    }
+    if let path = bootstrapScript, !path.isEmpty {
+      return .file(URL(fileURLWithPath: path))
+    }
+    let binary = try BootstrapManager.resolveBootstrapBinary()
+    return .file(binary)
   }
 }
 

@@ -20,7 +20,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "echo", "hello",
       ]
@@ -35,7 +34,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "echo", "hello-from-sh",
       ]
@@ -56,7 +54,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", profile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "echo", "ok",
       ]
@@ -79,7 +76,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile-dir", dir.path,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "cat", "/home/agent/sentinel.txt",
       ]
@@ -104,7 +100,6 @@ struct AgentcIntegrationTests {
         "sh",
         "--profile", sharedProfile,
         "--workspace", ws.path,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "cat", "\(containerPath)/probe.txt",
       ]
@@ -126,7 +121,6 @@ struct AgentcIntegrationTests {
         "sh",
         "--profile", sharedProfile,
         "--workspace", ws.path,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "pwd",
       ]
@@ -153,7 +147,6 @@ struct AgentcIntegrationTests {
         "--profile", sharedProfile,
         "--workspace", ws.path,
         "--exclude", "secret",
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "ls", "\(containerPath)/secret",
       ]
@@ -197,7 +190,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "command", "-v", "bun",
       ]
@@ -212,7 +204,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "cat", "/etc/hosts",
       ]
@@ -228,7 +219,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "cat", "/proc/1/cmdline",
       ]
@@ -257,7 +247,6 @@ struct AgentcIntegrationTests {
         "--profile", sharedProfile,
         "--configurations-dir", configsDir.path,
         "--configurations-repo", localRepo.path,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--configurations", "claude",
         "echo", "configurations-ok",
@@ -274,7 +263,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--cpus", "2",
         "--", "nproc",
@@ -295,7 +283,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--memory-mib", "\(limitMiB)",
         "--", "cat", "/sys/fs/cgroup/memory.max",
@@ -314,7 +301,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "-p", sharedProfile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "echo", "short-p",
       ]
@@ -339,7 +325,6 @@ struct AgentcIntegrationTests {
         "sh",
         "-p", sharedProfile,
         "-w", ws.path,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--", "cat", "\(containerPath)/probe.txt",
       ]
@@ -364,7 +349,6 @@ struct AgentcIntegrationTests {
         "-p", sharedProfile,
         "--configurations-dir", configsDir.path,
         "--configurations-repo", localRepo.path,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "-c", "claude",
         "echo", "short-c-ok",
@@ -382,7 +366,6 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "echo", "no-separator",
       ]
@@ -407,7 +390,6 @@ struct AgentcIntegrationTests {
         "--profile", sharedProfile,
         "--configurations-dir", configsDir.path,
         "--configurations-repo", localRepo.path,
-        "--bootstrap", bootstrapScriptPath,
         "--no-update-image",
         "--configurations", "claude",
         "echo", "remaining-ok",

@@ -119,29 +119,27 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
         ))
     }
 
-    // Bootstrap script: copy to temp dir so it can be shared as a virtiofs volume
+    // Bootstrap file: copy to a temp dir and mount so it can be shared as a virtiofs volume.
     var overridesEntrypoint = false
-    if let bootstrapScript = config.bootstrapScript {
+    switch config.bootstrapMode {
+    case .file(let bootstrapFile):
       let tempDir = try makeTempDir()
       tempDirs.append(tempDir)
-      let dest = tempDir.appendingPathComponent("entrypoint.sh")
-      try FileManager.default.copyItem(at: bootstrapScript, to: dest)
-
-      let srcPerms =
-        (try? FileManager.default.attributesOfItem(
-          atPath: bootstrapScript.path
-        )[.posixPermissions] as? Int) ?? 0o644
+      let dest = tempDir.appendingPathComponent("bootstrap")
+      try FileManager.default.copyItem(at: bootstrapFile, to: dest)
       try FileManager.default.setAttributes(
-        [.posixPermissions: srcPerms | 0o111],
+        [.posixPermissions: 0o755],
         ofItemAtPath: dest.path
       )
-
       mounts.append(
         .init(
           hostPath: AgentIsolationPathUtils.resolveSymlinksWithPlatformConsiderations(tempDir).path,
           containerPath: "/entrypoint-bootstrap"
         ))
       overridesEntrypoint = true
+
+    case .imageDefault:
+      break
     }
 
     // Environment: pass configurations and optional entrypoint override to bootstrap
@@ -160,7 +158,7 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
     // Build the final entrypoint (CMD args to the image's or custom ENTRYPOINT)
     let entrypoint: [String]
     if overridesEntrypoint {
-      entrypoint = ["/entrypoint-bootstrap/entrypoint.sh"] + containerArgs
+      entrypoint = ["/entrypoint-bootstrap/bootstrap"] + containerArgs
     } else {
       entrypoint = containerArgs
     }

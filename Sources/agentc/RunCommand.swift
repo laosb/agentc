@@ -51,8 +51,6 @@ struct RunCommand: AsyncParsableCommand {
       updateInterval: options.configurationsUpdateInterval
     )
 
-    let bootstrapScript: URL? = options.bootstrapScript.map { URL(fileURLWithPath: $0) }
-
     let isolationConfig = IsolationConfig(
       image: options.image,
       profileHomeDir: profileHomeDir,
@@ -60,7 +58,7 @@ struct RunCommand: AsyncParsableCommand {
       excludeFolders: excludeFolders,
       configurationsDir: configurationsDir,
       configurations: configNames,
-      bootstrapScript: bootstrapScript,
+      bootstrapMode: try options.resolveBootstrapMode(),
       arguments: entrypointArguments,
       allocateTTY: allocateTTY,
       cpuCount: options.cpuCount,

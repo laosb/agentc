@@ -11,6 +11,7 @@ let package = Package(
     .library(
       name: "AgentIsolationDockerRuntime", targets: ["AgentIsolationDockerRuntime"]),
     .executable(name: "agentc", targets: ["agentc"]),
+    .executable(name: "agentc-bootstrap", targets: ["agentc-bootstrap"]),
   ],
   traits: [
     .default(enabledTraits: ["ContainerRuntimeAppleContainer", "ContainerRuntimeDocker"]),
@@ -68,6 +69,10 @@ let package = Package(
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Logging", package: "swift-log"),
       ]
+    ),
+    .executableTarget(
+      name: "agentc-bootstrap",
+      dependencies: []
     ),
     .testTarget(
       name: "AgentIsolationTests",

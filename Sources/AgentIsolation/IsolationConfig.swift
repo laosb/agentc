@@ -1,5 +1,16 @@
 import Foundation
 
+/// Determines how the container entrypoint is configured.
+public enum BootstrapMode: Sendable {
+  /// Mount a file (binary or script) as the container entrypoint.
+  /// The agentc-bootstrap binary is the default; users can also supply
+  /// a custom binary or shell script via ``--bootstrap``.
+  case file(URL)
+
+  /// Respect the container image's built-in entrypoint; do not mount a bootstrap.
+  case imageDefault
+}
+
 /// Configuration for running an isolated agent container session.
 public struct IsolationConfig: Sendable {
   /// Container image reference (e.g. "ghcr.io/laosb/claudec:latest").
@@ -23,10 +34,8 @@ public struct IsolationConfig: Sendable {
   /// Ordered list of configuration names to activate.
   public var configurations: [String]
 
-  /// Optional path to a custom bootstrap/entrypoint script on the host.
-  /// When set, the script is mounted into the container and used as the entrypoint,
-  /// overriding the image's default entrypoint.
-  public var bootstrapScript: URL?
+  /// Controls how the container entrypoint is set up.
+  public var bootstrapMode: BootstrapMode
 
   /// Arguments forwarded to the container entrypoint.
   public var arguments: [String]
@@ -51,7 +60,7 @@ public struct IsolationConfig: Sendable {
     excludeFolders: [String] = [],
     configurationsDir: URL,
     configurations: [String] = ["claude"],
-    bootstrapScript: URL? = nil,
+    bootstrapMode: BootstrapMode = .imageDefault,
     arguments: [String] = [],
     allocateTTY: Bool = false,
     cpuCount: Int = 1,
@@ -64,7 +73,7 @@ public struct IsolationConfig: Sendable {
     self.excludeFolders = excludeFolders
     self.configurationsDir = configurationsDir
     self.configurations = configurations
-    self.bootstrapScript = bootstrapScript
+    self.bootstrapMode = bootstrapMode
     self.arguments = arguments
     self.allocateTTY = allocateTTY
     self.cpuCount = cpuCount

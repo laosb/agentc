@@ -57,8 +57,6 @@ struct ShellCommand: AsyncParsableCommand {
       updateInterval: options.configurationsUpdateInterval
     )
 
-    let bootstrapScript: URL? = options.bootstrapScript.map { URL(fileURLWithPath: $0) }
-
     // Build the entrypoint override for shell dispatch
     let entrypointOverride: [String]
     if command.isEmpty {
@@ -74,7 +72,7 @@ struct ShellCommand: AsyncParsableCommand {
       excludeFolders: excludeFolders,
       configurationsDir: configurationsDir,
       configurations: configNames,
-      bootstrapScript: bootstrapScript,
+      bootstrapMode: try options.resolveBootstrapMode(),
       arguments: [],
       allocateTTY: allocateTTY,
       cpuCount: options.cpuCount,

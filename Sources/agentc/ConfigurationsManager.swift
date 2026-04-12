@@ -82,10 +82,16 @@ enum ConfigurationsManager {
 
 enum AgentcError: LocalizedError {
   case configRepoError(String)
+  case bootstrapNotFound(String)
+  case bootstrapDownloadFailed(String)
 
   var errorDescription: String? {
     switch self {
     case .configRepoError(let message):
+      return "agentc: \(message)"
+    case .bootstrapNotFound(let message):
+      return "agentc: \(message)"
+    case .bootstrapDownloadFailed(let message):
       return "agentc: \(message)"
     }
   }

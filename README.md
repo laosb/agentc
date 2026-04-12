@@ -60,6 +60,23 @@ agentc run -c claude,copilot
 agentc run -c copilot
 ```
 
+### Container Images
+
+`agentc` works with any standard container image — it automatically sets up the agent user, sudo, and required tools at container start via an embedded bootstrap script. The default image is pre-configured for faster startup, but you can use any base image:
+
+```sh
+agentc run -i debian:latest               # stock Debian
+agentc run -i alpine:latest               # Alpine Linux
+agentc run -i buildpack-deps:scm          # Debian + git, curl, etc.
+agentc run -i my-custom-image:latest      # your own image
+```
+
+To skip the bootstrap and use the image's own entrypoint:
+
+```sh
+agentc run --respect-image-entrypoint -i my-image:latest
+```
+
 ## Architecture
 
 ```
@@ -70,6 +87,8 @@ agentc (CLI)
 ```
 
 `AgentIsolation` depends only on Foundation and [swift-crypto](https://github.com/apple/swift-crypto). Runtime backends are conditionally compiled via Swift package traits.
+
+The `agentc-bootstrap` binary is a standalone statically linked Linux executable that runs as the container entrypoint. It creates `agent` user and does the rest of agent initialization as needed. It is distributed as a separate release artifact and installed alongside the `agentc` binary.
 
 ## Development
 
@@ -84,6 +103,22 @@ swift test --filter AgentIsolationTests        # unit tests
 ```
 
 Set `BUILD_VERSION` and `BUILD_GIT_SHA` environment variables before `build.sh` to inject version info into the `agentc version` output.
+
+### Bootstrap binary
+
+The `agentc-bootstrap` binary is the container entrypoint. It must be built separately as a statically linked Linux binary:
+
+```sh
+# Build for the current architecture (requires Static Linux SDK)
+swift build --product agentc-bootstrap -c release --swift-sdk x86_64-swift-linux-musl   # x64
+swift build --product agentc-bootstrap -c release --swift-sdk aarch64-swift-linux-musl  # arm64
+
+# Install to the expected location
+mkdir -p ~/.agentc/bin
+cp .build/<sdk>/release/agentc-bootstrap ~/.agentc/bin/bootstrap
+```
+
+For released versions, `agentc` automatically downloads the matching bootstrap binary on first run. During development, you can also use `--bootstrap <path>` to specify a custom bootstrap binary or shell script, or `--respect-image-entrypoint` to skip the bootstrap entirely.
 
 ## Migrating from claudec
 

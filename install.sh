@@ -102,6 +102,10 @@ build_download_url() {
         ASSET="agentc-${ARCH_LABEL}-${OS_LABEL}.tar.gz"
     fi
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
+
+    # Bootstrap binary is always the Linux static build (runs inside containers).
+    BOOTSTRAP_ASSET="agentc-bootstrap-${ARCH_LABEL}-linux-static.tar.gz"
+    BOOTSTRAP_URL="https://github.com/${REPO}/releases/download/${TAG}/${BOOTSTRAP_ASSET}"
 }
 
 install_binary() {
@@ -123,6 +127,25 @@ install_binary() {
 
     info "Installed agentc to ${INSTALL_DIR}/agentc"
     info "Linked to ${LINK_DIR}/agentc"
+}
+
+install_bootstrap() {
+    info "Downloading bootstrap binary..."
+
+    fetch "$BOOTSTRAP_URL" "${TMPDIR_DL}/${BOOTSTRAP_ASSET}" 2>/dev/null || {
+        warn "Bootstrap binary not found in release. It will be downloaded on first run."
+        return 0
+    }
+
+    tar xzf "${TMPDIR_DL}/${BOOTSTRAP_ASSET}" -C "$TMPDIR_DL" || {
+        warn "Failed to extract bootstrap archive. It will be downloaded on first run."
+        return 0
+    }
+
+    mv "${TMPDIR_DL}/agentc-bootstrap" "${INSTALL_DIR}/bootstrap"
+    chmod +x "${INSTALL_DIR}/bootstrap"
+
+    info "Installed bootstrap to ${INSTALL_DIR}/bootstrap"
 }
 
 check_path() {
@@ -169,6 +192,7 @@ main() {
     find_release
     build_download_url
     install_binary
+    install_bootstrap
     check_path
     print_post_install
 }

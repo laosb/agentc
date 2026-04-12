@@ -107,14 +107,6 @@ let sharedProfile: String = {
   return profileName
 }()
 
-let bootstrapScriptPath: String = {
-  let repoRoot = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-  return repoRoot.appendingPathComponent("bootstrap.sh").path
-}()
-
 // MARK: - Local Config Repo
 
 func createLocalConfigRepo(at repoDir: URL) throws {
