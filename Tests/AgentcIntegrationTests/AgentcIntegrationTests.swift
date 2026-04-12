@@ -414,4 +414,53 @@ struct AgentcIntegrationTests {
     )
     #expect(result.exitCode == 0)
   }
+
+  // MARK: - --verbose flag
+
+  @Test("Without --verbose, bootstrap prepare.sh message is suppressed")
+  func verboseSuppressed() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--no-update-image",
+        "--", "echo", "ok",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(!result.stderr.contains("==> Running prepare.sh"))
+  }
+
+  @Test("With --verbose, bootstrap prepare.sh message is printed")
+  func verbosePrinted() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--verbose",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--no-update-image",
+        "--", "echo", "ok",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stderr.contains("==> Running prepare.sh"))
+  }
+
+  @Test("-v short flag works as --verbose alias")
+  func shortVerbose() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "-v",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--no-update-image",
+        "--", "echo", "ok",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stderr.contains("==> Running prepare.sh"))
+  }
 }

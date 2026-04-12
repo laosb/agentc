@@ -63,7 +63,8 @@ struct RunCommand: AsyncParsableCommand {
       allocateTTY: allocateTTY,
       cpuCount: options.cpuCount,
       memoryLimitMiB: options.memoryLimitMiB,
-      additionalHostMounts: options.additionalMount.map { URL(fileURLWithPath: $0) }
+      additionalHostMounts: options.additionalMount.map { URL(fileURLWithPath: $0) },
+      verbose: options.verbose
     )
 
     let exitCode = try await runSession(config: isolationConfig)
@@ -109,7 +110,9 @@ struct RunCommand: AsyncParsableCommand {
       let oldImage = try? await runtime.inspectImage(ref: config.image)
       let newImage = try? await runtime.pullImage(ref: config.image)
       if let oldImage, let newImage, oldImage.digest != newImage.digest {
-        print("agentc: loaded newer image for \(config.image)")
+        if options.verbose {
+          print("agentc: loaded newer image for \(config.image)")
+        }
         if !options.keepOldImage {
           try? await runtime.removeImage(digest: oldImage.digest)
         }

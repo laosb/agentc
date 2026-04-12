@@ -145,6 +145,9 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
     // Environment: pass configurations and optional entrypoint override to bootstrap
     var environment: [String: String] = [:]
     environment["AGENTC_CONFIGURATIONS"] = config.configurations.joined(separator: ",")
+    if config.verbose {
+      environment["AGENTC_VERBOSE"] = "1"
+    }
 
     // When an entrypoint override is provided (e.g. "sh" dispatch), the override
     // args replace config.arguments as the container CMD, and a flag tells the

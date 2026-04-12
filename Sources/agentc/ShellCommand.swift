@@ -77,7 +77,8 @@ struct ShellCommand: AsyncParsableCommand {
       allocateTTY: allocateTTY,
       cpuCount: options.cpuCount,
       memoryLimitMiB: options.memoryLimitMiB,
-      additionalHostMounts: options.additionalMount.map { URL(fileURLWithPath: $0) }
+      additionalHostMounts: options.additionalMount.map { URL(fileURLWithPath: $0) },
+      verbose: options.verbose
     )
 
     let exitCode = try await runShellSession(

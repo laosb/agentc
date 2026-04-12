@@ -53,6 +53,10 @@ public struct IsolationConfig: Sendable {
   /// Each is mounted at /workspace/<pathIdentifier(canonicalPath)>.
   public var additionalHostMounts: [URL]
 
+  /// When true, passes `AGENTC_VERBOSE=1` to the container so that the bootstrap
+  /// prints extra information (e.g. prepare.sh progress).
+  public var verbose: Bool
+
   public init(
     image: String,
     profileHomeDir: URL,
@@ -65,7 +69,8 @@ public struct IsolationConfig: Sendable {
     allocateTTY: Bool = false,
     cpuCount: Int = 1,
     memoryLimitMiB: Int = 1536,
-    additionalHostMounts: [URL] = []
+    additionalHostMounts: [URL] = [],
+    verbose: Bool = false
   ) {
     self.image = image
     self.profileHomeDir = profileHomeDir
@@ -79,5 +84,6 @@ public struct IsolationConfig: Sendable {
     self.cpuCount = cpuCount
     self.memoryLimitMiB = memoryLimitMiB
     self.additionalHostMounts = additionalHostMounts
+    self.verbose = verbose
   }
 }

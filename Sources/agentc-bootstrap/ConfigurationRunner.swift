@@ -57,9 +57,11 @@
         // lacks the execute bit (e.g. read-only mount from git checkout).
         let prepareScript = "\(configDir)/prepare.sh"
         if access(prepareScript, F_OK) == 0 {
-          fputs(
-            "==> Running prepare.sh for configuration '\(configName)'...\n",
-            stderr)
+          if Helpers.envVar("AGENTC_VERBOSE") == "1" {
+            fputs(
+              "==> Running prepare.sh for configuration '\(configName)'...\n",
+              stderr)
+          }
           if access(prepareScript, X_OK) == 0 {
             try Helpers.run(command: prepareScript, arguments: [])
           } else {

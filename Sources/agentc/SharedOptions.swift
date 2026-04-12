@@ -76,6 +76,9 @@ struct SharedOptions: ParsableArguments {
 
   @Flag(name: .long, help: "Skip the migration check for legacy ~/.claudec data.")
   var suppressMigrationFromClaudec: Bool = false
+
+  @Flag(name: .shortAndLong, help: "Print extra information (image pulls, bootstrap setup, etc.).")
+  var verbose: Bool = false
 }
 
 // MARK: - Resolution helpers
@@ -148,7 +151,7 @@ extension SharedOptions {
     if let path = bootstrapScript, !path.isEmpty {
       return .file(URL(fileURLWithPath: path))
     }
-    let binary = try BootstrapManager.resolveBootstrapBinary()
+    let binary = try BootstrapManager.resolveBootstrapBinary(verbose: verbose)
     return .file(binary)
   }
 }

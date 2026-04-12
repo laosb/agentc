@@ -9,7 +9,7 @@ enum BootstrapManager {
   }
 
   /// Resolve the bootstrap binary path, downloading from GitHub Releases if missing.
-  static func resolveBootstrapBinary() throws -> URL {
+  static func resolveBootstrapBinary(verbose: Bool = false) throws -> URL {
     let binaryPath = bootstrapBinaryPath
 
     if FileManager.default.fileExists(atPath: binaryPath.path) {
@@ -28,20 +28,22 @@ enum BootstrapManager {
         """)
     }
 
-    try downloadBootstrap(version: BuildInfo.version, to: binaryPath)
+    try downloadBootstrap(version: BuildInfo.version, to: binaryPath, verbose: verbose)
     return binaryPath
   }
 
   private static func downloadBootstrap(
-    version: String, to destination: URL
+    version: String, to destination: URL, verbose: Bool
   ) throws {
     let arch = hostArchLabel()
     let assetName = "agentc-bootstrap-\(arch)-linux-static.tar.gz"
     let url =
       "https://github.com/laosb/agentc/releases/download/v\(version)/\(assetName)"
 
-    FileHandle.standardError.write(
-      Data("agentc: downloading bootstrap binary...\n".utf8))
+    if verbose {
+      FileHandle.standardError.write(
+        Data("agentc: downloading bootstrap binary...\n".utf8))
+    }
 
     let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
       .appendingPathComponent("agentc-bootstrap-dl-\(UUID().uuidString)")
@@ -83,9 +85,11 @@ enum BootstrapManager {
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o755], ofItemAtPath: destination.path)
 
-    FileHandle.standardError.write(
-      Data(
-        "agentc: bootstrap binary installed to \(destination.path)\n".utf8))
+    if verbose {
+      FileHandle.standardError.write(
+        Data(
+          "agentc: bootstrap binary installed to \(destination.path)\n".utf8))
+    }
   }
 
   private static func hostArchLabel() -> String {
