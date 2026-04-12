@@ -52,13 +52,15 @@
         }
         setenv("PATH", path, 1)
 
-        // Run prepare.sh directly (kernel uses shebang for interpreter).
+        // Run prepare.sh through a shell interpreter (the mount is read-only,
+        // so the file may not have the execute bit set).
         let prepareScript = "\(configDir)/prepare.sh"
         if access(prepareScript, F_OK) == 0 {
+          let shell = access("/bin/bash", X_OK) == 0 ? "/bin/bash" : "/bin/sh"
           fputs(
             "==> Running prepare.sh for configuration '\(configName)'...\n",
             stderr)
-          try Helpers.run(command: prepareScript, arguments: [])
+          try Helpers.run(command: shell, arguments: [prepareScript])
         }
 
         lastEntrypoint = settings.entrypoint

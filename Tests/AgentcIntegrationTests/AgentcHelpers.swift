@@ -120,6 +120,8 @@ func createLocalConfigRepo(at repoDir: URL) throws {
     to: claudeDir.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
   try "#!/bin/bash\n".write(
     to: claudeDir.appendingPathComponent("prepare.sh"), atomically: true, encoding: .utf8)
+  try FileManager.default.setAttributes(
+    [.posixPermissions: 0o755], ofItemAtPath: claudeDir.appendingPathComponent("prepare.sh").path)
 
   for args: [String] in [
     ["init"],
