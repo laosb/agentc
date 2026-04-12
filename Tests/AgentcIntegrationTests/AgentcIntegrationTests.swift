@@ -20,6 +20,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--", "echo", "hello",
       ]
@@ -34,6 +35,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--", "echo", "hello-from-sh",
       ]
@@ -54,6 +56,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", profile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--", "echo", "ok",
       ]
@@ -76,6 +79,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile-dir", dir.path,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--", "cat", "/home/agent/sentinel.txt",
       ]
@@ -99,6 +103,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--workspace", ws.path,
         "--no-update-image",
         "--", "cat", "\(containerPath)/probe.txt",
@@ -120,6 +125,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--workspace", ws.path,
         "--no-update-image",
         "--", "pwd",
@@ -145,6 +151,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--workspace", ws.path,
         "--exclude", "secret",
         "--no-update-image",
@@ -175,6 +182,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--bootstrap", customBootstrap.path,
         "--no-update-image",
         "--", "echo", "ok",
@@ -190,6 +198,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--", "command", "-v", "bun",
       ]
@@ -204,6 +213,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--", "cat", "/etc/hosts",
       ]
@@ -219,6 +229,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--", "cat", "/proc/1/cmdline",
       ]
@@ -263,6 +274,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--cpus", "2",
         "--", "nproc",
@@ -283,6 +295,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--memory-mib", "\(limitMiB)",
         "--", "cat", "/sys/fs/cgroup/memory.max",
@@ -301,6 +314,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "-p", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "--", "echo", "short-p",
       ]
@@ -324,6 +338,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "-p", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "-w", ws.path,
         "--no-update-image",
         "--", "cat", "\(containerPath)/probe.txt",
@@ -366,6 +381,7 @@ struct AgentcIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
         "echo", "no-separator",
       ]

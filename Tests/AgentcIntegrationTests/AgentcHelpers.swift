@@ -107,6 +107,51 @@ let sharedProfile: String = {
   return profileName
 }()
 
+// MARK: - Shared Configurations Directory
+
+/// A stub configurations directory used by shared-profile tests so the real
+/// configurations repo (which installs Bun/Claude) is never cloned.
+let sharedConfigurationsDir: String = {
+  let dir = URL(fileURLWithPath: NSHomeDirectory())
+    .appendingPathComponent(".agentc/test-configurations")
+  let claudeDir = dir.appendingPathComponent("claude")
+  try? FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+
+  try? """
+  {"v":0,"entrypoint":["/bin/bash"],"additionalBinPaths":["$HOME/.bun/bin","$HOME/.claude/bin","$HOME/.local/bin"],"additionalMounts":[]}
+  """.write(
+    to: claudeDir.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
+
+  let prepareScript = claudeDir.appendingPathComponent("prepare.sh")
+  try? "#!/bin/sh\n# No-op for tests\n".write(to: prepareScript, atomically: true, encoding: .utf8)
+  try? FileManager.default.setAttributes(
+    [.posixPermissions: 0o755], ofItemAtPath: prepareScript.path)
+
+  // Make it a valid git repo so ConfigurationsManager.ensureRepo skips cloning.
+  let gitDir = dir.appendingPathComponent(".git")
+  if !FileManager.default.fileExists(atPath: gitDir.path) {
+    for args: [String] in [
+      ["init"],
+      ["add", "."],
+      ["-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "init"],
+    ] {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+      process.arguments = ["-C", dir.path] + args
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+      try? process.run()
+      process.waitUntilExit()
+    }
+  }
+
+  // Touch the pull-marker so ensureRepo doesn't try to pull (there's no remote).
+  FileManager.default.createFile(
+    atPath: dir.appendingPathComponent(".agentc-last-pull").path, contents: nil)
+
+  return dir.path
+}()
+
 // MARK: - Local Config Repo
 
 func createLocalConfigRepo(at repoDir: URL) throws {

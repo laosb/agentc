@@ -17,6 +17,7 @@ struct BaseImageIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--image", "docker.io/library/debian:latest",
         "--no-update-image",
         "--", "echo", "hello-from-debian",
@@ -32,6 +33,7 @@ struct BaseImageIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--image", "docker.io/library/debian:latest",
         "--no-update-image",
         "--", "id",
@@ -50,6 +52,7 @@ struct BaseImageIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--image", "docker.io/library/alpine:latest",
         "--no-update-image",
         "--", "echo", "hello-from-alpine",
@@ -65,6 +68,7 @@ struct BaseImageIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--image", "docker.io/library/alpine:latest",
         "--no-update-image",
         "--", "id",
@@ -83,6 +87,7 @@ struct BaseImageIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--image", "docker.io/library/buildpack-deps:scm",
         "--no-update-image",
         "--", "echo", "hello-from-buildpack",
@@ -98,6 +103,7 @@ struct BaseImageIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--image", "docker.io/library/buildpack-deps:scm",
         "--no-update-image",
         "--", "id",
@@ -114,6 +120,7 @@ struct BaseImageIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--image", "docker.io/library/buildpack-deps:scm",
         "--no-update-image",
         "--", "git", "--version",
@@ -134,6 +141,7 @@ struct BaseImageIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--image", "docker.io/library/debian:latest",
         "--respect-image-entrypoint",
         "--no-update-image",
@@ -162,6 +170,7 @@ struct BaseImageIntegrationTests {
       args: [
         "sh",
         "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
         "--workspace", ws.path,
         "--image", "docker.io/library/debian:latest",
         "--no-update-image",
