@@ -84,6 +84,7 @@ enum AgentcError: LocalizedError {
   case configRepoError(String)
   case bootstrapNotFound(String)
   case bootstrapDownloadFailed(String)
+  case runtimeNotAvailable(String)
 
   var errorDescription: String? {
     switch self {
@@ -93,6 +94,8 @@ enum AgentcError: LocalizedError {
       return "agentc: \(message)"
     case .bootstrapDownloadFailed(let message):
       return "agentc: \(message)"
+    case .runtimeNotAvailable(let runtime):
+      return "agentc: runtime '\(runtime)' is not available in this build"
     }
   }
 }

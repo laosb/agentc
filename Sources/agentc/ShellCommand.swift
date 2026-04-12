@@ -96,7 +96,29 @@ struct ShellCommand: AsyncParsableCommand {
 
     let runtimeConfig = ContainerRuntimeConfiguration(
       storagePath: storagePath, endpoint: options.dockerEndpoint)
-    let runtime = DockerRuntime(config: runtimeConfig)
+
+    let choice = RuntimeChoice.resolve(explicit: options.runtime)
+    return switch choice {
+    case .docker:
+      #if ContainerRuntimeDocker
+        try await runShellSessionWithRuntime(
+          DockerRuntime(config: runtimeConfig), config: config, entrypoint: entrypoint)
+      #else
+        throw AgentcError.runtimeNotAvailable("docker")
+      #endif
+    case .appleContainer:
+      #if ContainerRuntimeAppleContainer
+        try await runShellSessionWithRuntime(
+          AppleContainerRuntime(config: runtimeConfig), config: config, entrypoint: entrypoint)
+      #else
+        throw AgentcError.runtimeNotAvailable("apple-container")
+      #endif
+    }
+  }
+
+  private func runShellSessionWithRuntime<R: ContainerRuntime>(
+    _ runtime: R, config: IsolationConfig, entrypoint: [String]
+  ) async throws -> Int32 {
     defer { Task { try? await runtime.shutdown() } }
     let session = AgentSession(config: config, runtime: runtime)
     return try await session.run(entrypoint: entrypoint)

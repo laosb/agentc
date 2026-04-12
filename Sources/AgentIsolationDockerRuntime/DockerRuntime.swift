@@ -18,8 +18,44 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
   private let logger = Logger(label: "com.agentc.docker-runtime")
 
   public required init(config: ContainerRuntimeConfiguration) {
-    self.endpoint = config.endpoint ?? "/var/run/docker.sock"
+    self.endpoint = config.endpoint ?? Self.autoDetectEndpoint()
     self.client = DockerAPIClient(endpoint: self.endpoint)
+  }
+
+  /// Auto-detect the Docker socket path by checking common locations.
+  ///
+  /// Search order:
+  /// 1. `DOCKER_HOST` environment variable
+  /// 2. `$XDG_RUNTIME_DIR/docker.sock`
+  /// 3. `/run/user/{uid}/docker.sock` (rootless Docker on Linux)
+  /// 4. `~/.docker/run/docker.sock` (Docker Desktop on macOS)
+  /// 5. `/var/run/docker.sock` (default)
+  private static func autoDetectEndpoint() -> String {
+    if let host = ProcessInfo.processInfo.environment["DOCKER_HOST"], !host.isEmpty {
+      return host
+    }
+
+    if let xdgDir = ProcessInfo.processInfo.environment["XDG_RUNTIME_DIR"], !xdgDir.isEmpty {
+      let path = "\(xdgDir)/docker.sock"
+      if FileManager.default.fileExists(atPath: path) {
+        return path
+      }
+    }
+
+    let uid = getuid()
+    let userSocket = "/run/user/\(uid)/docker.sock"
+    if FileManager.default.fileExists(atPath: userSocket) {
+      return userSocket
+    }
+
+    let homeDockerSocket =
+      FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".docker/run/docker.sock").path
+    if FileManager.default.fileExists(atPath: homeDockerSocket) {
+      return homeDockerSocket
+    }
+
+    return "/var/run/docker.sock"
   }
 
   // MARK: - ContainerRuntime
