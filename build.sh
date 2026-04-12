@@ -110,7 +110,9 @@ fi
 BUILDINFO_FILE="${SCRIPT_DIR}/Sources/agentc/BuildInfo.swift"
 BUILDINFO_ORIGINAL=""
 BUILD_VERSION="${BUILD_VERSION:-dev}"
+BUILD_VERSION="${BUILD_VERSION#v}"  # strip leading 'v' from git tags
 BUILD_GIT_SHA="${BUILD_GIT_SHA:-$(git -C "${SCRIPT_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown")}"
+BUILD_GIT_SHA="${BUILD_GIT_SHA:0:7}"  # use short SHA
 if [[ "${BUILD_VERSION}" != "dev" || "${BUILD_GIT_SHA}" != "unknown" ]]; then
     BUILDINFO_ORIGINAL=$(cat "${BUILDINFO_FILE}")
     cat > "${BUILDINFO_FILE}" <<SWIFT

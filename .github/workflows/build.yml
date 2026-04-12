@@ -57,6 +57,9 @@ jobs:
 
       - name: Build release binaries
         run: bash build.sh --runtimes "${{ matrix.runtimes }}"${{ matrix.swift-sdk && format(' --swift-sdk {0}', matrix.swift-sdk) || '' }}
+        env:
+          BUILD_VERSION: ${{ github.ref_name }}
+          BUILD_GIT_SHA: ${{ github.sha }}
 
       - name: Verify static linking
         if: matrix.swift-sdk
