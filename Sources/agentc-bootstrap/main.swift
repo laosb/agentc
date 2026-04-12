@@ -7,24 +7,26 @@
 //   Phase 2 (agent): Process agent configurations, set up PATH, run
 //                    prepare.sh scripts, then exec the entrypoint.
 
-import FoundationEssentials
-import Musl
+#if os(Linux)
+  import FoundationEssentials
+  import Musl
 
-let args = Array(CommandLine.arguments.dropFirst())
+  let args = Array(CommandLine.arguments.dropFirst())
 
-do {
-  if getuid() == 0 {
-    try RootSetup.perform()
-    try Privileges.drop(to: "agent")
+  do {
+    if getuid() == 0 {
+      try RootSetup.perform()
+      try Privileges.drop(to: "agent")
+    }
+
+    try ConfigurationRunner.run(arguments: args)
+  } catch {
+    fputs("agentc-bootstrap: \(error)\n", stderr)
+    exit(1)
   }
 
-  try ConfigurationRunner.run(arguments: args)
-} catch {
-  fputs("agentc-bootstrap: \(error)\n", stderr)
+  // ConfigurationRunner.run always ends with exec (replacing the process).
+  // If we reach here, something went wrong.
+  fputs("agentc-bootstrap: unexpected return from configuration runner\n", stderr)
   exit(1)
-}
-
-// ConfigurationRunner.run always ends with exec (replacing the process).
-// If we reach here, something went wrong.
-fputs("agentc-bootstrap: unexpected return from configuration runner\n", stderr)
-exit(1)
+#endif
