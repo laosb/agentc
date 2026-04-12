@@ -80,7 +80,13 @@
           throw BootstrapError.execFailed(
             "entrypoint override requested but no arguments provided")
         }
-        Helpers.execReplace(command: arguments)
+        // The host may request /bin/bash but the container image might only
+        // have /bin/sh (e.g. Alpine). Fall back when needed.
+        var cmd = arguments
+        if cmd[0] == "/bin/bash" && access("/bin/bash", X_OK) != 0 {
+          cmd[0] = "/bin/sh"
+        }
+        Helpers.execReplace(command: cmd)
       }
 
       // Execute the last configuration's entrypoint with remaining CLI args appended.
@@ -89,7 +95,12 @@
           "no entrypoint defined in last configuration")
       }
 
-      Helpers.execReplace(command: entrypoint + arguments)
+      // Fall back to /bin/sh when the configured entrypoint shell isn't available.
+      var finalEntrypoint = entrypoint
+      if finalEntrypoint[0] == "/bin/bash" && access("/bin/bash", X_OK) != 0 {
+        finalEntrypoint[0] = "/bin/sh"
+      }
+      Helpers.execReplace(command: finalEntrypoint + arguments)
     }
   }
 #endif
