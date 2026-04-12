@@ -47,7 +47,7 @@
 
         // Add additional bin paths to PATH.
         for binPath in settings.additionalBinPaths ?? [] {
-          let expanded = binPath.replacingOccurrences(of: "$HOME", with: home)
+          let expanded = binPath.replacing("$HOME", with: home)
           path = "\(expanded):\(path)"
         }
         setenv("PATH", path, 1)
