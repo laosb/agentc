@@ -41,7 +41,6 @@ struct BaseImageIntegrationTests {
     )
     #expect(result.exitCode == 0)
     #expect(result.output.contains("agent"))
-    #expect(result.output.contains("1000"))
   }
 
   // MARK: - alpine:latest
@@ -76,7 +75,6 @@ struct BaseImageIntegrationTests {
     )
     #expect(result.exitCode == 0)
     #expect(result.output.contains("agent"))
-    #expect(result.output.contains("1000"))
   }
 
   // MARK: - buildpack-deps:scm
@@ -111,7 +109,6 @@ struct BaseImageIntegrationTests {
     )
     #expect(result.exitCode == 0)
     #expect(result.output.contains("agent"))
-    #expect(result.output.contains("1000"))
   }
 
   @Test("git is available on buildpack-deps:scm")
@@ -128,6 +125,59 @@ struct BaseImageIntegrationTests {
     )
     #expect(result.exitCode == 0)
     #expect(result.output.contains("git version"))
+  }
+
+  // MARK: - swift:6.3 (UID 1000 already used)
+
+  @Test("Runs echo on swift:6.3")
+  func swiftEcho() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--image", "docker.io/library/swift:6.3",
+        "--no-update-image",
+        "--", "echo", "hello-from-swift",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout.contains("hello-from-swift"))
+  }
+
+  @Test("Agent user exists and is functional after bootstrap on swift:6.3 (UID 1000 pre-used)")
+  func swiftAgentUser() async throws {
+    // swift:6.3 is Ubuntu-based and ships with UID 1000 already allocated,
+    // so the bootstrap must assign a different UID to the agent user.
+    // We only verify the user is named "agent" — not a specific UID.
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--image", "docker.io/library/swift:6.3",
+        "--no-update-image",
+        "--", "id",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.output.contains("agent"))
+  }
+
+  @Test("Commands run as agent user on swift:6.3")
+  func swiftWhoami() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--image", "docker.io/library/swift:6.3",
+        "--no-update-image",
+        "--", "whoami",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "agent")
   }
 
   // MARK: - --respect-image-entrypoint
