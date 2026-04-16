@@ -56,21 +56,7 @@ agentc run -c copilot
 
 ### Project Settings
 
-Place a `.agentc/settings.json` file in your project root to set default agent options for the project. 
-
-```json
-{
-  "agent": {
-    "image": "ghcr.io/my-org/dev:latest",
-    "configurations": ["claude"],
-    "cpus": 4,
-    "memoryMiB": 4096,
-    "excludes": [".git", "secrets"]
-  }
-}
-```
-
-CLI flags override project settings; some fields (like `excludes` and `additionalMounts`) are merged. 
+Use `agentc init` to place a `.agentc/settings.json` file in your project root to set default agent options for the project. CLI flags override project settings; some fields (like `excludes` and `additionalMounts`) are merged. 
 
 See [docs/project-settings.md](./docs/project-settings.md) for the full schema and override rules.
 

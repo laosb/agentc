@@ -9,10 +9,14 @@
 /// Place this file in your project root (or any ancestor directory) to set defaults
 /// for `agentc` invocations within the project tree.  All fields are optional;
 /// only the values you specify take effect.
-public struct ProjectSettings: Decodable, Sendable, Equatable {
+public struct ProjectSettings: Codable, Sendable, Equatable {
   public var agent: AgentSettings?
 
-  public struct AgentSettings: Decodable, Sendable, Equatable {
+  public init(agent: AgentSettings? = nil) {
+    self.agent = agent
+  }
+
+  public struct AgentSettings: Codable, Sendable, Equatable {
     public var image: String?
     public var profile: String?
     public var excludes: [String]?
@@ -24,6 +28,32 @@ public struct ProjectSettings: Decodable, Sendable, Equatable {
     public var memoryMiB: Int?
     public var bootstrap: String?
     public var respectImageEntrypoint: Bool?
+
+    public init(
+      image: String? = nil,
+      profile: String? = nil,
+      excludes: [String]? = nil,
+      configurations: [String]? = nil,
+      additionalMounts: [String]? = nil,
+      defaultArguments: [String]? = nil,
+      additionalArguments: [String]? = nil,
+      cpus: Int? = nil,
+      memoryMiB: Int? = nil,
+      bootstrap: String? = nil,
+      respectImageEntrypoint: Bool? = nil
+    ) {
+      self.image = image
+      self.profile = profile
+      self.excludes = excludes
+      self.configurations = configurations
+      self.additionalMounts = additionalMounts
+      self.defaultArguments = defaultArguments
+      self.additionalArguments = additionalArguments
+      self.cpus = cpus
+      self.memoryMiB = memoryMiB
+      self.bootstrap = bootstrap
+      self.respectImageEntrypoint = respectImageEntrypoint
+    }
   }
 
   /// The folder names to probe at each directory level, in priority order.
@@ -38,7 +68,8 @@ public struct ProjectSettings: Decodable, Sendable, Equatable {
     var dir = startDir.standardizedFileURL
     while true {
       for folderName in folderNames {
-        let settingsURL = dir
+        let settingsURL =
+          dir
           .appendingPathComponent(folderName)
           .appendingPathComponent("settings.json")
         if let settings = load(from: settingsURL) {

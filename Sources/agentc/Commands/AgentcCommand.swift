@@ -13,7 +13,13 @@ struct AgentcCommand: AsyncParsableCommand {
       The simplest invocation is just `agentc run`. Use `agentc --help` for \
       full details on each subcommand.
       """,
-    subcommands: [RunCommand.self, ShellCommand.self, VersionCommand.self, MigrateFromClaudecCommand.self],
+    subcommands: [
+      RunCommand.self,
+      ShellCommand.self,
+      InitCommand.self,
+      VersionCommand.self,
+      MigrateFromClaudecCommand.self,
+    ],
     defaultSubcommand: RunCommand.self
   )
 }
