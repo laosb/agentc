@@ -6,6 +6,7 @@
   import ContainerizationOS
   import Foundation
   import Logging
+  import System
 
   // MARK: - AppleContainerRuntime
 
@@ -164,9 +165,9 @@
             containerConfig.process.setTerminalIO(terminal: t)
           }
         case .standardIO:
-          containerConfig.process.stdin = FileHandleReader(.standardInput)
-          containerConfig.process.stdout = FileHandleWriter(.standardOutput)
-          containerConfig.process.stderr = FileHandleWriter(.standardError)
+          containerConfig.process.stdin = FileDescriptorReader(.standardInput)
+          containerConfig.process.stdout = FileDescriptorWriter(.standardOutput)
+          containerConfig.process.stderr = FileDescriptorWriter(.standardError)
         case .custom(let stdin, let stdout, let stderr, let isTerminal):
           containerConfig.process.terminal = isTerminal
           containerConfig.process.stdin = ContainerizationReaderStream(stdin)

@@ -4,6 +4,20 @@
   import Foundation
 #endif
 
+#if canImport(Glibc)
+  import Glibc
+#elseif canImport(Musl)
+  import Musl
+#endif
+
+#if canImport(System)
+  import System
+#else
+  import SystemPackage
+#endif
+
+import Subprocess
+
 /// Locates or downloads the agentc-bootstrap binary used as the container entrypoint.
 enum BootstrapManager {
   /// Expected install location for the bootstrap binary.
@@ -13,7 +27,7 @@ enum BootstrapManager {
   }
 
   /// Resolve the bootstrap binary path, downloading from GitHub Releases if missing.
-  static func resolveBootstrapBinary(verbose: Bool = false) throws -> URL {
+  static func resolveBootstrapBinary(verbose: Bool = false) async throws -> URL {
     let binaryPath = bootstrapBinaryPath
 
     if FileManager.default.fileExists(atPath: binaryPath.path) {
@@ -32,24 +46,23 @@ enum BootstrapManager {
         """)
     }
 
-    try downloadBootstrap(version: BuildInfo.version, to: binaryPath, verbose: verbose)
+    try await downloadBootstrap(version: BuildInfo.version, to: binaryPath, verbose: verbose)
     return binaryPath
   }
 
   private static func downloadBootstrap(
     version: String, to destination: URL, verbose: Bool
-  ) throws {
+  ) async throws {
     let arch = hostArchLabel()
     let assetName = "agentc-bootstrap-\(arch)-linux-static.tar.gz"
     let url =
       "https://github.com/laosb/agentc/releases/download/v\(version)/\(assetName)"
 
     if verbose {
-      FileHandle.standardError.write(
-        Data("agentc: downloading bootstrap binary...\n".utf8))
+      writeToStderr("agentc: downloading bootstrap binary...\n")
     }
 
-    let tmpDir = URL(fileURLWithPath: NSTemporaryDirectory())
+    let tmpDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("agentc-bootstrap-dl-\(UUID().uuidString)")
     try FileManager.default.createDirectory(
       at: tmpDir, withIntermediateDirectories: true)
@@ -58,23 +71,23 @@ enum BootstrapManager {
     let tarPath = tmpDir.appendingPathComponent(assetName)
 
     // Download
-    let curl = Process()
-    curl.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    curl.arguments = ["curl", "-fsSL", url, "-o", tarPath.path]
-    try curl.run()
-    curl.waitUntilExit()
-    guard curl.terminationStatus == 0 else {
+    let curlResult = try await run(
+      .name("curl"),
+      arguments: ["-fsSL", url, "-o", tarPath.path],
+      output: .discarded
+    )
+    guard curlResult.terminationStatus.isSuccess else {
       throw AgentcError.bootstrapDownloadFailed(
         "Failed to download bootstrap binary from \(url)")
     }
 
     // Extract
-    let tar = Process()
-    tar.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    tar.arguments = ["tar", "xzf", tarPath.path, "-C", tmpDir.path]
-    try tar.run()
-    tar.waitUntilExit()
-    guard tar.terminationStatus == 0 else {
+    let tarResult = try await run(
+      .name("tar"),
+      arguments: ["xzf", tarPath.path, "-C", tmpDir.path],
+      output: .discarded
+    )
+    guard tarResult.terminationStatus.isSuccess else {
       throw AgentcError.bootstrapDownloadFailed(
         "Failed to extract bootstrap archive")
     }
@@ -90,9 +103,7 @@ enum BootstrapManager {
       [.posixPermissions: 0o755], ofItemAtPath: destination.path)
 
     if verbose {
-      FileHandle.standardError.write(
-        Data(
-          "agentc: bootstrap binary installed to \(destination.path)\n".utf8))
+      writeToStderr("agentc: bootstrap binary installed to \(destination.path)\n")
     }
   }
 

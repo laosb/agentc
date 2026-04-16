@@ -249,7 +249,7 @@ struct AgentcIntegrationTests {
     let configsDir = tempDir.appendingPathComponent("configurations")
     let localRepo = tempDir.appendingPathComponent("repo")
 
-    try createLocalConfigRepo(at: localRepo)
+    try await createLocalConfigRepo(at: localRepo)
 
     // `agentc run --configurations claude` with custom configs dir/repo
     let result = await runAgentc(
@@ -356,7 +356,7 @@ struct AgentcIntegrationTests {
     let configsDir = tempDir.appendingPathComponent("configurations")
     let localRepo = tempDir.appendingPathComponent("repo")
 
-    try createLocalConfigRepo(at: localRepo)
+    try await createLocalConfigRepo(at: localRepo)
 
     let result = await runAgentc(
       args: [
@@ -398,7 +398,7 @@ struct AgentcIntegrationTests {
     let configsDir = tempDir.appendingPathComponent("configurations")
     let localRepo = tempDir.appendingPathComponent("repo")
 
-    try createLocalConfigRepo(at: localRepo)
+    try await createLocalConfigRepo(at: localRepo)
 
     let result = await runAgentc(
       args: [

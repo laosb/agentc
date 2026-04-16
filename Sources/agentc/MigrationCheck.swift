@@ -6,6 +6,12 @@ import ArgumentParser
   import Foundation
 #endif
 
+#if canImport(Glibc)
+  import Glibc
+#elseif canImport(Musl)
+  import Musl
+#endif
+
 /// Checks whether the user should migrate from the legacy ~/.claudec directory.
 ///
 /// Returns `true` if migration is needed and the user should be prompted.
@@ -20,7 +26,7 @@ enum MigrationCheck {
     if let home = ProcessInfo.processInfo.environment["HOME"], !home.isEmpty {
       return URL(fileURLWithPath: home)
     }
-    return URL(fileURLWithPath: NSHomeDirectory())
+    return FileManager.default.homeDirectoryForCurrentUser
   }
 
   /// The agentc data directory: ~/.agentc
@@ -53,12 +59,13 @@ enum MigrationCheck {
     guard fm.fileExists(atPath: claudecDir.path) else { return }
 
     // Migration needed
-    FileHandle.standardError.write(Data("""
+    let message = """
       agentc: Found existing ~/.claudec directory from the legacy claudec CLI.
       Run `agentc migrate-from-claudec` to migrate your profiles and configurations.
       Or use `--suppress-migration-from-claudec` to skip this check.
 
-      """.utf8))
+      """
+    writeToStderr(message)
     throw ExitCode(1)
   }
 }

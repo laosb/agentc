@@ -3,8 +3,15 @@ import Synchronization
 
 #if canImport(FoundationEssentials)
   import FoundationEssentials
+  import Dispatch
 #else
   import Foundation
+#endif
+
+#if canImport(System)
+  import System
+#else
+  import SystemPackage
 #endif
 
 #if canImport(Darwin)
@@ -79,8 +86,8 @@ final class DockerStreamAttach: Sendable {
 
   // MARK: - I/O
 
-  /// Start bidirectional I/O between the socket and file handles.
-  func startIO(stdin stdinFH: FileHandle, stdout stdoutFH: FileHandle, stderr stderrFH: FileHandle)
+  /// Start bidirectional I/O between the socket and file descriptors.
+  func startIO(stdin stdinFD: FileDescriptor, stdout stdoutFD: FileDescriptor, stderr stderrFD: FileDescriptor)
   {
     // Socket -> stdout/stderr
     let socketReadSource = DispatchSource.makeReadSource(
@@ -95,9 +102,9 @@ final class DockerStreamAttach: Sendable {
       }
       let data = Data(buffer[0..<bytesRead])
       if self.tty {
-        stdoutFH.write(data)
+        data.withUnsafeBytes { _ = try? stdoutFD.write($0) }
       } else {
-        self.demuxWrite(data, stdout: stdoutFH, stderr: stderrFH)
+        self.demuxWrite(data, stdout: stdoutFD, stderr: stderrFD)
       }
     }
     socketReadSource.setCancelHandler { [weak self] in
@@ -116,12 +123,12 @@ final class DockerStreamAttach: Sendable {
 
     // stdin -> socket
     let stdinReadSource = DispatchSource.makeReadSource(
-      fileDescriptor: stdinFH.fileDescriptor,
+      fileDescriptor: stdinFD.rawValue,
       queue: DispatchQueue.global(qos: .userInteractive))
     stdinReadSource.setEventHandler { [weak self] in
       guard let self = self else { return }
       var buffer = [UInt8](repeating: 0, count: 4096)
-      let bytesRead = read(stdinFH.fileDescriptor, &buffer, buffer.count)
+      let bytesRead = read(stdinFD.rawValue, &buffer, buffer.count)
       if bytesRead <= 0 {
         stdinReadSource.cancel()
         return
@@ -174,8 +181,8 @@ final class DockerStreamAttach: Sendable {
   /// Start bidirectional I/O between the socket and custom Reader/Writer streams.
   ///
   /// Unlike ``startIO(stdin:stdout:stderr:)``, this method accepts protocol-based
-  /// streams instead of `FileHandle` objects, allowing callers to capture or
-  /// transform container output without file descriptors.
+  /// streams instead of `FileDescriptor` values, allowing callers to capture or
+  /// transform container output.
   func startCustomIO(stdin: any ReaderStream, stdout: any Writer, stderr: any Writer) {
     // Socket → Writers
     let socketReadSource = DispatchSource.makeReadSource(
@@ -231,7 +238,7 @@ final class DockerStreamAttach: Sendable {
   ///
   /// Each frame has an 8-byte header: [type:1][padding:3][size:4_be]
   /// Type: 0=stdin, 1=stdout, 2=stderr
-  private func demuxWrite(_ data: Data, stdout: FileHandle, stderr: FileHandle) {
+  private func demuxWrite(_ data: Data, stdout: FileDescriptor, stderr: FileDescriptor) {
     state.withLock { state in
       state.demuxBuffer.append(data)
 
@@ -246,9 +253,9 @@ final class DockerStreamAttach: Sendable {
         let payload = state.demuxBuffer[8..<(8 + size)]
         switch streamType {
         case 1:
-          stdout.write(Data(payload))
+          Data(payload).withUnsafeBytes { _ = try? stdout.write($0) }
         case 2:
-          stderr.write(Data(payload))
+          Data(payload).withUnsafeBytes { _ = try? stderr.write($0) }
         default:
           break
         }

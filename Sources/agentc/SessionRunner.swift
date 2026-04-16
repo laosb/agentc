@@ -48,13 +48,14 @@ enum SessionRunner {
     let excludeFolders = options.resolveExcludeFolders(projectSettings: projectSettings)
 
     // Ensure configurations repo
-    try ConfigurationsManager.ensureRepo(
+    try await ConfigurationsManager.ensureRepo(
       at: configurationsDir,
       repoURL: options.configurationsRepo,
       updateInterval: options.configurationsUpdateInterval
     )
 
     let resolvedImage = options.resolveImage(projectSettings: projectSettings)
+    let bootstrapMode = try await options.resolveBootstrapMode(projectSettings: projectSettings)
 
     let isolationConfig = IsolationConfig(
       image: resolvedImage,
@@ -63,7 +64,7 @@ enum SessionRunner {
       excludeFolders: excludeFolders,
       configurationsDir: configurationsDir,
       configurations: configNames,
-      bootstrapMode: try options.resolveBootstrapMode(projectSettings: projectSettings),
+      bootstrapMode: bootstrapMode,
       arguments: arguments,
       allocateTTY: allocateTTY,
       cpuCount: options.resolveCpuCount(projectSettings: projectSettings),

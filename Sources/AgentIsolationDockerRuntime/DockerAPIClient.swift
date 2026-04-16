@@ -291,12 +291,27 @@ final class DockerAPIClient: Sendable {
   }
 
   /// Percent-encode a string for use as a URL path component.
-  /// Encodes everything except unreserved characters (RFC 3986 section 2.3).
+  ///
+  /// Allows unreserved characters (RFC 3986 §2.3) plus the sub-delimiter and
+  /// pchar extras that are legal in path segments — but NOT `/`, which must be
+  /// encoded when it appears inside a Docker image reference.
   static func pathEncodeComponent(_ value: String) -> String {
-    // .urlPathAllowed includes '/' which we must also encode for Docker image refs
-    var allowed = CharacterSet.urlPathAllowed
-    allowed.remove("/")
-    return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    // Characters allowed in a URL path segment (RFC 3986) minus '/'.
+    let allowed: Set<Character> = Set(
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:@!$&'()*+,;="
+    )
+    var result = ""
+    result.reserveCapacity(value.count)
+    for char in value {
+      if allowed.contains(char) {
+        result.append(char)
+      } else {
+        for byte in String(char).utf8 {
+          result += String(format: "%%%02X", byte)
+        }
+      }
+    }
+    return result
   }
 }
 

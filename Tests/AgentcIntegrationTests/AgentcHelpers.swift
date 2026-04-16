@@ -1,5 +1,12 @@
 import Crypto
 import Foundation
+import Subprocess
+
+#if canImport(System)
+  import System
+#else
+  import SystemPackage
+#endif
 
 // MARK: - Process Helper
 
@@ -21,45 +28,32 @@ func runAgentc(
     .deletingLastPathComponent()  // Tests/
   let agentcPath = repoRoot.appendingPathComponent("agentc").path
 
-  var environment = ProcessInfo.processInfo.environment
-  // Clean environment for agentc tests
-  environment.removeValue(forKey: "AGENTC_CONFIGURATIONS")
-  environment.removeValue(forKey: "AGENTC_ENTRYPOINT_OVERRIDE")
-
+  // Build environment overrides: remove agentc internal vars, add test-specific ones
+  var overrides: [Environment.Key: String?] = [
+    "AGENTC_CONFIGURATIONS": nil,
+    "AGENTC_ENTRYPOINT_OVERRIDE": nil,
+  ]
   for (key, value) in env {
-    environment[key] = value
+    overrides[Environment.Key(stringLiteral: key)] = value
   }
 
-  return await withCheckedContinuation { continuation in
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: agentcPath)
-    process.arguments = args
-    process.environment = environment
-
-    if let cwd {
-      process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+  do {
+    let result = try await run(
+      .path(FilePath(agentcPath)),
+      arguments: Arguments(args),
+      environment: .inherit.updating(overrides),
+      workingDirectory: cwd.map { FilePath($0) },
+      output: .string(limit: 512 * 1024),
+      error: .string(limit: 512 * 1024)
+    )
+    let exitCode: Int32
+    switch result.terminationStatus {
+    case .exited(let code): exitCode = code
+    case .signaled(let sig): exitCode = sig
     }
-
-    let stdoutPipe = Pipe()
-    let stderrPipe = Pipe()
-    process.standardOutput = stdoutPipe
-    process.standardError = stderrPipe
-
-    process.terminationHandler = { p in
-      let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-      let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-      let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-      let stderr = String(data: stderrData, encoding: .utf8) ?? ""
-      continuation.resume(
-        returning: ProcessOutput(exitCode: p.terminationStatus, stdout: stdout, stderr: stderr))
-    }
-
-    do {
-      try process.run()
-    } catch {
-      continuation.resume(
-        returning: ProcessOutput(exitCode: -1, stdout: "", stderr: "launch error: \(error)"))
-    }
+    return ProcessOutput(exitCode: exitCode, stdout: result.standardOutput ?? "", stderr: result.standardError ?? "")
+  } catch {
+    return ProcessOutput(exitCode: -1, stdout: "", stderr: "launch error: \(error)")
   }
 }
 
@@ -132,22 +126,10 @@ let sharedConfigurationsDir: String = {
   try? FileManager.default.setAttributes(
     [.posixPermissions: 0o755], ofItemAtPath: prepareScript.path)
 
-  // Make it a valid git repo so ConfigurationsManager.ensureRepo skips cloning.
+  // Create a .git directory so ConfigurationsManager.ensureRepo skips cloning.
   let gitDir = dir.appendingPathComponent(".git")
   if !FileManager.default.fileExists(atPath: gitDir.path) {
-    for args: [String] in [
-      ["init"],
-      ["add", "."],
-      ["-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "init"],
-    ] {
-      let process = Process()
-      process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-      process.arguments = ["-C", dir.path] + args
-      process.standardOutput = FileHandle.nullDevice
-      process.standardError = FileHandle.nullDevice
-      try? process.run()
-      process.waitUntilExit()
-    }
+    try? FileManager.default.createDirectory(at: gitDir, withIntermediateDirectories: true)
   }
 
   // Touch the pull-marker so ensureRepo doesn't try to pull (there's no remote).
@@ -159,7 +141,7 @@ let sharedConfigurationsDir: String = {
 
 // MARK: - Local Config Repo
 
-func createLocalConfigRepo(at repoDir: URL) throws {
+func createLocalConfigRepo(at repoDir: URL) async throws {
   let fm = FileManager.default
   let claudeDir = repoDir.appendingPathComponent("claude")
   try fm.createDirectory(at: claudeDir, withIntermediateDirectories: true)
@@ -178,14 +160,13 @@ func createLocalConfigRepo(at repoDir: URL) throws {
     ["add", "."],
     ["-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "init"],
   ] {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-    process.arguments = ["-C", repoDir.path] + args
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    try process.run()
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else {
+    let result = try await run(
+      .path("/usr/bin/git"),
+      arguments: Arguments(["-C", repoDir.path] + args),
+      output: .discarded,
+      error: .discarded
+    )
+    guard result.terminationStatus.isSuccess else {
       fatalError("git \(args.joined(separator: " ")) failed in createLocalConfigRepo")
     }
   }

@@ -4,8 +4,23 @@ import Synchronization
 
 #if canImport(FoundationEssentials)
   import FoundationEssentials
+  import Dispatch
 #else
   import Foundation
+#endif
+
+#if canImport(System)
+  import System
+#else
+  import SystemPackage
+#endif
+
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#elseif canImport(Musl)
+  import Musl
 #endif
 
 // MARK: - DockerRuntime

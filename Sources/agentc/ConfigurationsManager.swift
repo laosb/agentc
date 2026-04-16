@@ -4,6 +4,20 @@
   import Foundation
 #endif
 
+#if canImport(Glibc)
+  import Glibc
+#elseif canImport(Musl)
+  import Musl
+#endif
+
+#if canImport(System)
+  import System
+#else
+  import SystemPackage
+#endif
+
+import Subprocess
+
 /// Manages the agent-isolation-configurations git repository (clone / pull).
 enum ConfigurationsManager {
   static let defaultRepo = "https://github.com/laosb/agent-isolation-configurations"
@@ -17,7 +31,7 @@ enum ConfigurationsManager {
     at dir: URL,
     repoURL: String? = nil,
     updateInterval: Int? = nil
-  ) throws {
+  ) async throws {
     let repo = repoURL ?? defaultRepo
     let interval = updateInterval ?? defaultUpdateInterval
 
@@ -45,14 +59,13 @@ enum ConfigurationsManager {
       if FileManager.default.fileExists(atPath: dir.path) {
         try FileManager.default.removeItem(at: dir)
       }
-      FileHandle.standardError.write(
-        Data("agentc: cloning configurations repo...\n".utf8))
-      let process = Process()
-      process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-      process.arguments = ["clone", "--depth", "1", repo, dir.path]
-      try process.run()
-      process.waitUntilExit()
-      guard process.terminationStatus == 0 else {
+      writeToStderr("agentc: cloning configurations repo...\n")
+      let result = try await run(
+        .path("/usr/bin/git"),
+        arguments: ["clone", "--depth", "1", repo, dir.path],
+        output: .discarded
+      )
+      guard result.terminationStatus.isSuccess else {
         throw AgentcError.configRepoError(
           "Failed to clone configurations repo from \(repo)")
       }
@@ -70,13 +83,12 @@ enum ConfigurationsManager {
     }
 
     // Pull updates
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-    process.arguments = ["-C", dir.path, "pull", "--ff-only", "--quiet"]
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    try process.run()
-    process.waitUntilExit()
+    _ = try? await run(
+      .path("/usr/bin/git"),
+      arguments: ["-C", dir.path, "pull", "--ff-only", "--quiet"],
+      output: .discarded,
+      error: .discarded
+    )
     // Update marker regardless of pull success (avoid repeated failures)
     FileManager.default.createFile(atPath: markerFile.path, contents: nil)
   }

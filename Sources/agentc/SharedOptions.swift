@@ -182,7 +182,7 @@ extension SharedOptions {
   /// Resolve the bootstrap mode from CLI flags, project settings, and installed binary.
   ///
   /// Priority: CLI --respect-image-entrypoint → CLI --bootstrap → project settings → installed binary.
-  func resolveBootstrapMode(projectSettings: ProjectSettings? = nil) throws -> BootstrapMode {
+  func resolveBootstrapMode(projectSettings: ProjectSettings? = nil) async throws -> BootstrapMode {
     if respectImageEntrypoint {
       return .imageDefault
     }
@@ -197,7 +197,7 @@ extension SharedOptions {
         return .file(URL(fileURLWithPath: path))
       }
     }
-    let binary = try BootstrapManager.resolveBootstrapBinary(verbose: verbose)
+    let binary = try await BootstrapManager.resolveBootstrapBinary(verbose: verbose)
     return .file(binary)
   }
 
