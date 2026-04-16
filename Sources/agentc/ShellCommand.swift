@@ -34,13 +34,15 @@ struct ShellCommand: AsyncParsableCommand {
     // Check for legacy claudec data before proceeding
     try MigrationCheck.checkIfNeeded(suppress: options.suppressMigrationFromClaudec)
 
-    let (_, profileDir) = options.resolveProfile()
+    let projectSettings = options.loadProjectSettings()
+
+    let (_, profileDir) = options.resolveProfile(projectSettings: projectSettings)
     let profileHomeDir = profileDir.appending(path: "home")
     let workspace = options.resolveWorkspace()
     let configurationsDir = options.resolveConfigurationsDir()
     let configNames = options.resolveConfigurations(
-      positional: nil, profileDir: profileDir)
-    let excludeFolders = options.resolveExcludeFolders()
+      positional: nil, profileDir: profileDir, projectSettings: projectSettings)
+    let excludeFolders = options.resolveExcludeFolders(projectSettings: projectSettings)
 
     // sh is interactive when no command is given
     let allocateTTY: Bool
@@ -65,19 +67,21 @@ struct ShellCommand: AsyncParsableCommand {
       entrypointOverride = ["/bin/bash", "-c", command.joined(separator: " ")]
     }
 
+    let resolvedImage = options.resolveImage(projectSettings: projectSettings)
+
     let isolationConfig = IsolationConfig(
-      image: options.image,
+      image: resolvedImage,
       profileHomeDir: profileHomeDir,
       workspace: workspace,
       excludeFolders: excludeFolders,
       configurationsDir: configurationsDir,
       configurations: configNames,
-      bootstrapMode: try options.resolveBootstrapMode(),
+      bootstrapMode: try options.resolveBootstrapMode(projectSettings: projectSettings),
       arguments: [],
       allocateTTY: allocateTTY,
-      cpuCount: options.cpuCount,
-      memoryLimitMiB: options.memoryLimitMiB,
-      additionalHostMounts: options.additionalMount.map { URL(fileURLWithPath: $0) },
+      cpuCount: options.resolveCpuCount(projectSettings: projectSettings),
+      memoryLimitMiB: options.resolveMemoryLimitMiB(projectSettings: projectSettings),
+      additionalHostMounts: options.resolveAdditionalMounts(projectSettings: projectSettings),
       verbose: options.verbose
     )
 

@@ -12,7 +12,8 @@ struct ProcessOutput: Sendable {
 
 func runAgentc(
   args: [String],
-  env: [String: String] = [:]
+  env: [String: String] = [:],
+  cwd: String? = nil
 ) async -> ProcessOutput {
   let repoRoot = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()  // AgentcHelpers.swift
@@ -34,6 +35,10 @@ func runAgentc(
     process.executableURL = URL(fileURLWithPath: agentcPath)
     process.arguments = args
     process.environment = environment
+
+    if let cwd {
+      process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+    }
 
     let stdoutPipe = Pipe()
     let stderrPipe = Pipe()

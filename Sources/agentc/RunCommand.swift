@@ -35,13 +35,16 @@ struct RunCommand: AsyncParsableCommand {
     // Check for legacy claudec data before proceeding
     try MigrationCheck.checkIfNeeded(suppress: options.suppressMigrationFromClaudec)
 
-    let (_, profileDir) = options.resolveProfile()
+    let projectSettings = options.loadProjectSettings()
+
+    let (_, profileDir) = options.resolveProfile(projectSettings: projectSettings)
     let profileHomeDir = profileDir.appending(path: "home")
     let workspace = options.resolveWorkspace()
     let configurationsDir = options.resolveConfigurationsDir()
     let configNames = options.resolveConfigurations(
-      positional: options.configurationsFlag, profileDir: profileDir)
-    let excludeFolders = options.resolveExcludeFolders()
+      positional: options.configurationsFlag, profileDir: profileDir,
+      projectSettings: projectSettings)
+    let excludeFolders = options.resolveExcludeFolders(projectSettings: projectSettings)
     let allocateTTY = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
 
     // Ensure configurations repo
@@ -51,19 +54,23 @@ struct RunCommand: AsyncParsableCommand {
       updateInterval: options.configurationsUpdateInterval
     )
 
+    let resolvedImage = options.resolveImage(projectSettings: projectSettings)
+    let resolvedArguments = options.resolveArguments(
+      entrypointArguments: entrypointArguments, projectSettings: projectSettings)
+
     let isolationConfig = IsolationConfig(
-      image: options.image,
+      image: resolvedImage,
       profileHomeDir: profileHomeDir,
       workspace: workspace,
       excludeFolders: excludeFolders,
       configurationsDir: configurationsDir,
       configurations: configNames,
-      bootstrapMode: try options.resolveBootstrapMode(),
-      arguments: entrypointArguments,
+      bootstrapMode: try options.resolveBootstrapMode(projectSettings: projectSettings),
+      arguments: resolvedArguments,
       allocateTTY: allocateTTY,
-      cpuCount: options.cpuCount,
-      memoryLimitMiB: options.memoryLimitMiB,
-      additionalHostMounts: options.additionalMount.map { URL(fileURLWithPath: $0) },
+      cpuCount: options.resolveCpuCount(projectSettings: projectSettings),
+      memoryLimitMiB: options.resolveMemoryLimitMiB(projectSettings: projectSettings),
+      additionalHostMounts: options.resolveAdditionalMounts(projectSettings: projectSettings),
       verbose: options.verbose
     )
 

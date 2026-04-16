@@ -60,6 +60,26 @@ agentc run -c claude,copilot
 agentc run -c copilot
 ```
 
+### Project Settings
+
+Place a `.agentc/settings.json` file in your project root to set default agent options for the project. 
+
+```json
+{
+  "agent": {
+    "image": "ghcr.io/my-org/dev:latest",
+    "configurations": ["claude"],
+    "cpus": 4,
+    "memoryMiB": 4096,
+    "excludes": [".git", "secrets"]
+  }
+}
+```
+
+CLI flags override project settings; some fields (like `excludes` and `additionalMounts`) are merged. 
+
+See [docs/project-settings.md](./docs/project-settings.md) for the full schema and override rules.
+
 ### Container Images
 
 `agentc` works with any standard container image — it automatically sets up the agent user, sudo, and required tools at container start via an embedded bootstrap script. The default image is pre-configured for faster startup, but you can use any base image:
