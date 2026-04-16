@@ -4,8 +4,6 @@ Run AI coding agents in isolated containers with persistent profiles and per-pro
 
 Supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [GitHub Copilot CLI](https://gh.io/copilot-install), and more — with pluggable agent configurations via the [agent-isolation-configurations](https://github.com/laosb/agent-isolation-configurations) repo. Contributions for additional agents are welcome!
 
-Available container runtimes: [Apple Containerization](https://apple.github.io/containerization/) (macOS) and Docker (macOS/Linux).
-
 ## Install
 
 ### Prerequisites
@@ -20,8 +18,6 @@ Available container runtimes: [Apple Containerization](https://apple.github.io/c
 curl -fsSL https://raw.githubusercontent.com/laosb/agentc/main/install.sh | sh
 ```
 
-This detects your platform, downloads the latest release from GitHub, and installs to `~/.agentc/bin/` with a symlink in `~/.local/bin/`.
-
 ## Quick Start
 
 ```sh
@@ -33,24 +29,22 @@ agentc sh -- ls -la /home/agent     # run a command inside the container
 agentc version                      # print version info
 ```
 
-On first run, `agentc` clones the [agent-isolation-configurations](https://github.com/laosb/agent-isolation-configurations) repo and runs each configuration's `prepare.sh` to install required tools. Subsequent runs reuse the existing install.
-
 Use `agentc --help` and `agentc <subcommand> --help` for full CLI reference.
 
 ### Profiles
 
-A profile is a persistent `/home/agent` directory that survives container restarts — keeping agent auth, memory, settings, and MCP servers.
+A profile contains a persistent `/home/agent` directory that survives container restarts — keeping agent auth, memory, settings, and MCP servers.
 
 ```sh
 agentc run -p work                  # use a named profile
 agentc run --profile-dir ~/my-prof  # use a custom directory
 ```
 
-Profiles are stored at `~/.agentc/profiles/<name>/home/`.
+Profiles are stored at `~/.agentc/profiles/<name>/`.
 
 ### Configurations
 
-Agent configurations are modular setup recipes. Each configuration provides a `prepare.sh` script, optional additional PATH entries, and an entrypoint command. The last configuration's entrypoint is used.
+Agent configurations are modular setup recipes. Each configuration provides a `prepare.sh` script and optional additional settings. The last configuration's entrypoint is used.
 
 ```sh
 # makes sure both Claude Code + GitHub Copilot CLI installed, but invokes GitHub Copilot CLI
@@ -104,11 +98,12 @@ agentc (CLI)
   └─ AgentIsolation                          (runtime-agnostic orchestration)
   └─ AgentIsolationAppleContainerRuntime     (Apple Containerization, macOS)
   └─ AgentIsolationDockerRuntime             (Docker Engine API, macOS/Linux)
+agentc-bootstrap                             (In-container bootstrap program)
 ```
 
 `AgentIsolation` depends only on Foundation and [swift-crypto](https://github.com/apple/swift-crypto). Runtime backends are conditionally compiled via Swift package traits.
 
-The `agentc-bootstrap` binary is a standalone statically linked Linux executable that runs as the container entrypoint. It creates `agent` user and does the rest of agent initialization as needed. It is distributed as a separate release artifact and installed alongside the `agentc` binary.
+The `agentc-bootstrap` binary is a standalone statically-linked Linux executable that runs as the container entrypoint. It creates `agent` user and does the rest of agent initialization as needed.
 
 ## Development
 
@@ -151,11 +146,7 @@ agentc migrate-from-claudec
 If you have scripts or muscle memory that use the `claudec` command, you can set up a shell alias:
 
 ```sh
-# bash / zsh
 alias claudec='agentc run --'
-
-# fish
-alias claudec 'agentc run --'
 ```
 
 ## License
