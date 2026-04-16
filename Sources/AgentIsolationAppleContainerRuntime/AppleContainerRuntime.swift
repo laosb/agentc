@@ -40,9 +40,9 @@
       let store = try ImageStore(path: imageStoreRoot)
       self.imageStore = store
 
-      let network: ContainerManager.Network?
+      let network: Network?
       if #available(macOS 26.0, *) {
-        network = try ContainerManager.VmnetNetwork()
+        network = try VmnetNetwork()
       } else {
         network = nil
       }
