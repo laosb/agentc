@@ -180,6 +180,56 @@ struct BaseImageIntegrationTests {
     #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "agent")
   }
 
+  // MARK: - Bare image references (no registry prefix)
+
+  @Test("Runs echo on bare alpine:latest (no docker.io/library/ prefix)")
+  func bareAlpineEcho() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--image", "alpine:latest",
+        "--no-update-image",
+        "--", "echo", "hello-from-bare-alpine",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout.contains("hello-from-bare-alpine"))
+  }
+
+  @Test("Runs echo on bare debian:latest (no docker.io/library/ prefix)")
+  func bareDebianEcho() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--image", "debian:latest",
+        "--no-update-image",
+        "--", "echo", "hello-from-bare-debian",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout.contains("hello-from-bare-debian"))
+  }
+
+  @Test("Runs echo on bare swift:6.3 (no docker.io/library/ prefix)")
+  func bareSwiftEcho() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--image", "swift:6.3",
+        "--no-update-image",
+        "--", "echo", "hello-from-bare-swift",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout.contains("hello-from-bare-swift"))
+  }
+
   // MARK: - --respect-image-entrypoint
 
   @Test("--respect-image-entrypoint skips bootstrap")

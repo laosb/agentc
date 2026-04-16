@@ -101,6 +101,15 @@ let package = Package(
       ]
     ),
     .testTarget(
+      name: "AgentIsolationAppleContainerRuntimeTests",
+      dependencies: [
+        "AgentIsolation",
+        .target(
+          name: "AgentIsolationAppleContainerRuntime",
+          condition: .when(traits: ["ContainerRuntimeAppleContainer"])),
+      ]
+    ),
+    .testTarget(
       name: "AgentcIntegrationTests",
       dependencies: [
         .product(name: "Crypto", package: "swift-crypto")

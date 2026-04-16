@@ -59,8 +59,9 @@
       guard let store = imageStore else {
         throw AppleContainerRuntimeError.notPrepared
       }
+      let resolvedRef = Self.normalizedDockerHubRef(ref)
       do {
-        let image = try await store.pull(reference: ref, platform: .current)
+        let image = try await store.pull(reference: resolvedRef, platform: .current)
         return AppleContainerImage(ref: ref, digest: image.digest)
       } catch {
         // Pull failure — image may not exist or network error
@@ -72,19 +73,24 @@
       guard let store = imageStore else {
         throw AppleContainerRuntimeError.notPrepared
       }
-      do {
-        let image = try await store.get(reference: ref)
+      // Try the ref as given first (image may have been pulled with the full name)
+      if let image = try? await store.get(reference: ref) {
         return AppleContainerImage(ref: ref, digest: image.digest)
-      } catch {
-        return nil
       }
+      // Fall back to the normalized Docker Hub reference for bare names
+      let resolvedRef = Self.normalizedDockerHubRef(ref)
+      if resolvedRef != ref, let image = try? await store.get(reference: resolvedRef) {
+        return AppleContainerImage(ref: ref, digest: image.digest)
+      }
+      return nil
     }
 
     public func removeImage(ref: String) async throws {
       guard let store = imageStore else {
         throw AppleContainerRuntimeError.notPrepared
       }
-      try await store.delete(reference: ref, performCleanup: true)
+      let resolvedRef = Self.normalizedDockerHubRef(ref)
+      try await store.delete(reference: resolvedRef, performCleanup: true)
     }
 
     public func removeImage(digest: String) async throws {
@@ -114,9 +120,11 @@
 
       let containerID = UUID().uuidString.lowercased()
 
+      let resolvedRef = Self.normalizedDockerHubRef(imageRef)
+
       let container = try await manager.create(
         containerID,
-        reference: imageRef,
+        reference: resolvedRef,
         rootfsSizeInBytes: UInt64(8).gib()
       ) { containerConfig in
         containerConfig.cpus = configuration.cpuCount
@@ -191,6 +199,37 @@
       container.terminal?.tryReset()
       try await container.underlyingContainer.stop()
       try container.manager.delete(container.id)
+    }
+
+    // MARK: - Image Reference Normalization
+
+    /// Normalizes a bare image reference to a fully qualified Docker Hub reference.
+    /// e.g., "swift:6.3" → "docker.io/library/swift:6.3",
+    ///       "user/repo:tag" → "docker.io/user/repo:tag".
+    /// Already-qualified references (containing a registry domain) are returned as-is.
+    static func normalizedDockerHubRef(_ ref: String) -> String {
+      // Strip tag (@sha256:...) or tag (:tag) to isolate the name portion
+      let name: String
+      if let atIndex = ref.firstIndex(of: "@") {
+        name = String(ref[..<atIndex])
+      } else {
+        name = ref
+      }
+
+      guard let slashIndex = name.firstIndex(of: "/") else {
+        // No slash → bare name like "swift:6.3"
+        return "docker.io/library/\(ref)"
+      }
+
+      let firstComponent = name[..<slashIndex]
+      // A registry domain contains a dot, a colon (port), or is "localhost"
+      if firstComponent.contains(".") || firstComponent.contains(":") || firstComponent == "localhost"
+      {
+        return ref
+      }
+
+      // Has a slash but no registry (e.g., "user/repo:tag")
+      return "docker.io/\(ref)"
     }
 
     // MARK: - Kernel
