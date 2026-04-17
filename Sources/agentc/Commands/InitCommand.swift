@@ -94,7 +94,7 @@ struct InitCommand: AsyncParsableCommand {
 
     let settings = buildSettings()
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     let data = try encoder.encode(settings)
 
     try data.write(to: agentcDir.appendingPathComponent("settings.json"))
