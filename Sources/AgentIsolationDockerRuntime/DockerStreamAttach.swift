@@ -160,6 +160,23 @@ final class DockerStreamAttach: Sendable {
     }
   }
 
+  /// Half-close the write side of the attach socket.
+  ///
+  /// Signals to Docker that the client has no more stdin to send. Docker
+  /// normally keeps a TTY attach connection open while `AttachStdin=true`
+  /// even after the container process exits, waiting for us to close the
+  /// write half. Once we do, Docker closes its side and our read loop
+  /// observes EOF, so ``waitForReadCompletion()`` can return.
+  func closeStdinHalf() {
+    #if canImport(Darwin) || canImport(Glibc) || canImport(Musl)
+      _ = shutdown(fd, Int32(SHUT_WR))
+    #endif
+    state.withLock { state in
+      state.writerTask?.cancel()
+      state.writerTask = nil
+    }
+  }
+
   /// Stop the I/O and close the socket.
   func stop() {
     state.withLock { state in

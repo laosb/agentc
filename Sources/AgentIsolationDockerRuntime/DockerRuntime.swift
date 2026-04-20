@@ -290,7 +290,11 @@ public final class DockerContainer: ContainerRuntimeContainer, Sendable {
     // Wait for the attach stream to finish reading all container output
     // before returning, so nothing is lost when the caller proceeds to stop.
     if let conn = attachConnection {
-      await conn.waitForReadCompletion()
+      // When AttachStdin=true + TTY=true, Docker may keep the attach socket
+      // open after the container exits, waiting for the client to close its
+      // write half. Do that now so Docker closes its side and we observe EOF.
+      conn.closeStdinHalf()
+      await withReadCompletionTimeout(conn: conn, seconds: 5)
     }
     return Int32(statusCode)
   }
@@ -307,6 +311,20 @@ public final class DockerContainer: ContainerRuntimeContainer, Sendable {
 
   public func resize(cols: Int, rows: Int) async throws {
     try await client.resizeContainerTTY(id: id, width: cols, height: rows)
+  }
+
+  /// Wait for the attach read loop to complete, but give up after `seconds`
+  /// if Docker never closes the socket. Returning early is safe: we only
+  /// lose trailing bytes Docker never delivered.
+  private func withReadCompletionTimeout(conn: DockerStreamAttach, seconds: Int) async {
+    await withTaskGroup(of: Void.self) { group in
+      group.addTask { await conn.waitForReadCompletion() }
+      group.addTask {
+        try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
+      }
+      _ = await group.next()
+      group.cancelAll()
+    }
   }
 
   private func setupSIGWINCH() {

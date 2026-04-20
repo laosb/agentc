@@ -646,8 +646,10 @@
 
       try await session.start()
       print("DIAG agentSessionCustomPTYWrite: session started")
-      try session.write(Data("hello".utf8))
-      print("DIAG agentSessionCustomPTYWrite: wrote 5 bytes")
+      // Include a newline so the PTY's cooked line discipline commits the
+      // bytes to the child (`head -c 5` otherwise blocks waiting for EOL).
+      try session.write(Data("hello\n".utf8))
+      print("DIAG agentSessionCustomPTYWrite: wrote 6 bytes")
 
       let exitCode = try await session.wait()
       let output = await collector.value

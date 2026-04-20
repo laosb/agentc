@@ -24,7 +24,9 @@ struct AgentcIntegrationTests {
         "--profile", sharedProfile,
         "--configurations-dir", sharedConfigurationsDir,
         "--no-update-image",
-        "--", "sh", "-c", "exit 42",
+        // ShellCommand joins the argv with spaces and runs it via `bash -c`,
+        // so passing `["exit", "42"]` lands as `bash -c "exit 42"` (builtin).
+        "--", "exit", "42",
       ]
     )
     print(
