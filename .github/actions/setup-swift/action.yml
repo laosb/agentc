@@ -13,7 +13,7 @@ runs:
     - name: Setup Swift
       uses: SwiftyLab/setup-swift@latest
       with:
-        swift-version: "6.3.1"
+        swift-version: "6.3"
 
     - name: Cache Static Linux SDK
       if: inputs.static-sdk == 'true'
@@ -21,9 +21,9 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.swiftpm/swift-sdks
-        key: static-sdk-6.3.1-${{ runner.arch }}
+        key: static-sdk-6.3-${{ runner.arch }}
 
     - name: Install Static Linux SDK
       if: inputs.static-sdk == 'true' && steps.cache-static-sdk.outputs.cache-hit != 'true'
       shell: bash
-      run: swift sdk install https://download.swift.org/swift-6.3.1-release/static-sdk/swift-6.3.1-RELEASE/swift-6.3.1-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz --checksum fac05271c1f7d060bd203240ce5251d5ca902d30ac899f553765dbb3a88b97ad
+      run: swift sdk install https://download.swift.org/swift-6.3-release/static-sdk/swift-6.3-RELEASE/swift-6.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz --checksum d2078b69bdeb5c31202c10e9d8a11d6f66f82938b51a4b75f032ccb35c4c286c
