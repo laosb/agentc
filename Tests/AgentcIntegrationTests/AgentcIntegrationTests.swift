@@ -14,6 +14,25 @@ struct AgentcIntegrationTests {
     #expect(result.stdout.contains("agentc"))
   }
 
+  @Test("agentc forwards non-zero container exit codes (session start+wait)")
+  func nonZeroExitCodeFlow() async throws {
+    // Exercises the AgentSession.start() + wait() path end-to-end: a
+    // container that exits with code 42 should cause agentc to exit 42.
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--no-update-image",
+        "--", "sh", "-c", "exit 42",
+      ]
+    )
+    print(
+      "DIAG nonZeroExitCodeFlow: exitCode=\(result.exitCode) stdout=\(result.stdout.prefix(200)) stderr=\(result.stderr.prefix(200))"
+    )
+    #expect(result.exitCode == 42)
+  }
+
   @Test("agentc sh -- echo runs command in container")
   func shCommand() async throws {
     let result = await runAgentc(

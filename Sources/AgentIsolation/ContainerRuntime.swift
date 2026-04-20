@@ -145,4 +145,26 @@ public protocol ContainerRuntimeContainer: Identifiable, Sendable, AnyObject {
   ///
   /// Will be called even after ``wait(timeoutInSeconds:)``.
   func stop() async throws
+
+  /// Resize the container's PTY, in character cells.
+  ///
+  /// Only meaningful when the container was started with a terminal
+  /// (e.g. ``ContainerConfiguration/IO/currentTerminal`` or
+  /// ``ContainerConfiguration/IO/custom(stdin:stdout:stderr:isTerminal:)`` with
+  /// `isTerminal: true`). The default implementation throws
+  /// ``ContainerRuntimeError/resizeNotSupported``; runtimes that support
+  /// resizing should override it.
+  func resize(cols: Int, rows: Int) async throws
+}
+
+extension ContainerRuntimeContainer {
+  public func resize(cols: Int, rows: Int) async throws {
+    throw ContainerRuntimeError.resizeNotSupported
+  }
+}
+
+/// Errors reported by conforming ``ContainerRuntime`` implementations.
+public enum ContainerRuntimeError: Error, Sendable {
+  /// The runtime does not support resizing this container's PTY.
+  case resizeNotSupported
 }

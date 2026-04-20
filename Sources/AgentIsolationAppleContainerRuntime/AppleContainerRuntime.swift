@@ -224,7 +224,8 @@
 
       let firstComponent = name[..<slashIndex]
       // A registry domain contains a dot, a colon (port), or is "localhost"
-      if firstComponent.contains(".") || firstComponent.contains(":") || firstComponent == "localhost"
+      if firstComponent.contains(".") || firstComponent.contains(":")
+        || firstComponent == "localhost"
       {
         return ref
       }
@@ -341,6 +342,12 @@
     public func stop() async throws {
       terminal?.tryReset()
       try await underlyingContainer.stop()
+    }
+
+    public func resize(cols: Int, rows: Int) async throws {
+      try await underlyingContainer.resize(
+        to: ContainerizationOS.Terminal.Size(
+          width: UInt16(cols), height: UInt16(rows)))
     }
   }
 

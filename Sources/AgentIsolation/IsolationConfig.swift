@@ -61,6 +61,16 @@ public struct IsolationConfig: Sendable {
   /// prints extra information (e.g. prepare.sh progress).
   public var verbose: Bool
 
+  /// When true, the session allocates a raw PTY whose bytes flow through
+  /// ``AgentSession/rawOut`` and accept input via ``AgentSession/write(_:)``,
+  /// with ``AgentSession/resize(cols:rows:)`` to adjust the terminal size.
+  ///
+  /// When false (the default), the session attaches to the current terminal
+  /// or standard streams per ``allocateTTY``; in that mode ``AgentSession/rawOut``
+  /// finishes immediately on ``AgentSession/start(entrypoint:timeout:)`` and
+  /// ``AgentSession/write(_:)`` / ``AgentSession/resize(cols:rows:)`` throw.
+  public var customPTY: Bool
+
   public init(
     image: String,
     profileHomeDir: URL,
@@ -74,7 +84,8 @@ public struct IsolationConfig: Sendable {
     cpuCount: Int = 1,
     memoryLimitMiB: Int = 1536,
     additionalHostMounts: [URL] = [],
-    verbose: Bool = false
+    verbose: Bool = false,
+    customPTY: Bool = false
   ) {
     self.image = image
     self.profileHomeDir = profileHomeDir
@@ -89,5 +100,6 @@ public struct IsolationConfig: Sendable {
     self.memoryLimitMiB = memoryLimitMiB
     self.additionalHostMounts = additionalHostMounts
     self.verbose = verbose
+    self.customPTY = customPTY
   }
 }

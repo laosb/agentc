@@ -9,6 +9,7 @@ final class MockRuntime: ContainerRuntime, @unchecked Sendable {
   var prepareCallCount = 0
   var lastContainerConfiguration: ContainerConfiguration?
   var lastImageRef: String?
+  var lastContainer: MockContainer?
   var containerExitCode: Int32 = 0
   var removedImageRefs: [String] = []
   var removedImageDigests: [String] = []
@@ -41,7 +42,9 @@ final class MockRuntime: ContainerRuntime, @unchecked Sendable {
   ) async throws -> MockContainer {
     lastImageRef = imageRef
     lastContainerConfiguration = configuration
-    return MockContainer(id: "mock-container", exitCode: containerExitCode)
+    let container = MockContainer(id: "mock-container", exitCode: containerExitCode)
+    lastContainer = container
+    return container
   }
 
   func removeContainer(_ container: MockContainer) async throws {
@@ -59,6 +62,8 @@ final class MockContainer: ContainerRuntimeContainer, @unchecked Sendable {
   let exitCode: Int32
   var stopped = false
   var removed = false
+  var resizeCalls: [(cols: Int, rows: Int)] = []
+  var lastTimeoutInSeconds: Int64? = nil
 
   init(id: String, exitCode: Int32) {
     self.id = id
@@ -66,10 +71,15 @@ final class MockContainer: ContainerRuntimeContainer, @unchecked Sendable {
   }
 
   func wait(timeoutInSeconds: Int64?) async throws -> Int32 {
-    exitCode
+    lastTimeoutInSeconds = timeoutInSeconds
+    return exitCode
   }
 
   func stop() async throws {
     stopped = true
+  }
+
+  func resize(cols: Int, rows: Int) async throws {
+    resizeCalls.append((cols: cols, rows: rows))
   }
 }
