@@ -434,6 +434,43 @@
       try await runtime.removeImage(ref: "alpine:3.18")
     }
 
+    @Test("resize forwards to Docker API for a TTY container")
+    func resizeOnTTYContainer() async throws {
+      let runtime = makeRuntime()
+      defer { Task { try? await runtime.shutdown() } }
+      try await runtime.prepare()
+      _ = try await runtime.pullImage(ref: "alpine:latest")
+      print("DIAG resizeOnTTYContainer: pulled alpine:latest")
+
+      // Use a sleep so the container stays alive long enough to resize.
+      // Attach with custom IO + isTerminal so useTTY=true.
+      let config = ContainerConfiguration(
+        entrypoint: ["/bin/sh", "-c", "sleep 2"],
+        io: .custom(
+          stdin: EmptyReaderStream(),
+          stdout: MockWriter(),
+          stderr: MockWriter(),
+          isTerminal: true)
+      )
+
+      let container = try await runtime.runContainer(
+        imageRef: "alpine:latest", configuration: config)
+      print("DIAG resizeOnTTYContainer: container=\(container.id) started")
+
+      do {
+        try await container.resize(cols: 100, rows: 30)
+        print("DIAG resizeOnTTYContainer: resize call succeeded")
+      } catch {
+        print("DIAG resizeOnTTYContainer: resize failed with error=\(error)")
+        try? await runtime.removeContainer(container)
+        throw error
+      }
+
+      let exitCode = try await container.wait(timeoutInSeconds: 10)
+      print("DIAG resizeOnTTYContainer: exitCode=\(exitCode)")
+      try await runtime.removeContainer(container)
+    }
+
     @Test("runContainer executes a command and returns exit code")
     func runContainer() async throws {
       let runtime = makeRuntime()
@@ -517,6 +554,111 @@
       #expect(!stdout.string.contains("to-stderr"))
       #expect(stderr.string.contains("to-stderr"))
       #expect(!stderr.string.contains("to-stdout"))
+    }
+
+    @Test("AgentSession customPTY streams output via rawOut and accepts resize")
+    func agentSessionCustomPTY() async throws {
+      let runtime = makeRuntime()
+      defer { Task { try? await runtime.shutdown() } }
+      try await runtime.prepare()
+      _ = try await runtime.pullImage(ref: "alpine:latest")
+
+      let tmpBase = URL(fileURLWithPath: "/tmp/claudec-test-custompty-docker-\(UUID().uuidString)")
+      let profileDir = tmpBase.appendingPathComponent("home")
+      let configsDir = tmpBase.appendingPathComponent("configurations")
+      try FileManager.default.createDirectory(
+        at: configsDir, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: tmpBase) }
+
+      let config = IsolationConfig(
+        image: "alpine:latest",
+        profileHomeDir: profileDir,
+        workspace: URL(fileURLWithPath: "/tmp"),
+        configurationsDir: configsDir,
+        configurations: [],
+        bootstrapMode: .imageDefault,
+        arguments: ["/bin/sh", "-c", "echo pty-ok; sleep 0.2"],
+        customPTY: true
+      )
+
+      let session = AgentSession(config: config, runtime: runtime)
+
+      // Collect rawOut off the task so it runs concurrently with start/wait.
+      let collector = Task { () -> Data in
+        var buf = Data()
+        for await chunk in session.rawOut {
+          buf.append(contentsOf: chunk)
+        }
+        return buf
+      }
+
+      try await session.start()
+      print("DIAG agentSessionCustomPTY: session started")
+      try await session.resize(cols: 100, rows: 30)
+      print("DIAG agentSessionCustomPTY: resize invoked")
+
+      let exitCode = try await session.wait()
+      let output = await collector.value
+      print(
+        "DIAG agentSessionCustomPTY: exitCode=\(exitCode) bytes=\(output.count) text=\(String(data: output, encoding: .utf8) ?? "<non-utf8>")"
+      )
+
+      #expect(exitCode == 0)
+      #expect(String(data: output, encoding: .utf8)?.contains("pty-ok") == true)
+    }
+
+    @Test("AgentSession customPTY write delivers stdin to container")
+    func agentSessionCustomPTYWrite() async throws {
+      let runtime = makeRuntime()
+      defer { Task { try? await runtime.shutdown() } }
+      try await runtime.prepare()
+      _ = try await runtime.pullImage(ref: "alpine:latest")
+
+      let tmpBase = URL(
+        fileURLWithPath: "/tmp/claudec-test-custompty-docker-write-\(UUID().uuidString)")
+      let profileDir = tmpBase.appendingPathComponent("home")
+      let configsDir = tmpBase.appendingPathComponent("configurations")
+      try FileManager.default.createDirectory(
+        at: configsDir, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: tmpBase) }
+
+      // `head -c 5` echoes the first 5 stdin bytes then exits.
+      let config = IsolationConfig(
+        image: "alpine:latest",
+        profileHomeDir: profileDir,
+        workspace: URL(fileURLWithPath: "/tmp"),
+        configurationsDir: configsDir,
+        configurations: [],
+        bootstrapMode: .imageDefault,
+        arguments: ["/bin/sh", "-c", "head -c 5"],
+        customPTY: true
+      )
+
+      let session = AgentSession(config: config, runtime: runtime)
+      let collector = Task { () -> Data in
+        var buf = Data()
+        for await chunk in session.rawOut {
+          buf.append(contentsOf: chunk)
+          if buf.count >= 5 { break }
+        }
+        return buf
+      }
+
+      try await session.start()
+      print("DIAG agentSessionCustomPTYWrite: session started")
+      try session.write(Data("hello".utf8))
+      print("DIAG agentSessionCustomPTYWrite: wrote 5 bytes")
+
+      let exitCode = try await session.wait()
+      let output = await collector.value
+      print(
+        "DIAG agentSessionCustomPTYWrite: exitCode=\(exitCode) bytes=\(output.count) text=\(String(data: output, encoding: .utf8) ?? "<non-utf8>")"
+      )
+
+      #expect(exitCode == 0)
+      // A TTY echoes input, so the output contains our bytes (possibly with
+      // an echoed prefix). Verify the payload appears somewhere.
+      #expect(String(data: output, encoding: .utf8)?.contains("hello") == true)
     }
 
     @Test("custom IO sends stdin to container")

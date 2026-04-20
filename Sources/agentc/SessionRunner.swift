@@ -139,10 +139,7 @@ enum SessionRunner {
       }
     }
     let session = AgentSession(config: config, runtime: runtime)
-    if let entrypoint {
-      return try await session.run(entrypoint: entrypoint)
-    } else {
-      return try await session.run()
-    }
+    try await session.start(entrypoint: entrypoint)
+    return try await session.wait()
   }
 }

@@ -20,7 +20,8 @@ struct AgentSessionTests {
       arguments: ["echo", "hello"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     #expect(runtime.prepareCallCount == 1)
   }
@@ -39,7 +40,8 @@ struct AgentSessionTests {
       arguments: ["echo", "test"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     #expect(runtime.lastImageRef == "ghcr.io/test/image:v1")
   }
@@ -64,7 +66,8 @@ struct AgentSessionTests {
       arguments: ["echo"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let mounts = runtime.lastContainerConfiguration!.mounts
     let homeMount = mounts.first { $0.containerPath == "/home/agent" }
@@ -91,7 +94,8 @@ struct AgentSessionTests {
       arguments: ["echo"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let canonicalPath = wsDir.resolvingSymlinksInPath().path
     let expectedPath: String
@@ -135,7 +139,8 @@ struct AgentSessionTests {
       arguments: ["pwd"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let workDir = runtime.lastContainerConfiguration!.workingDirectory
     #expect(workDir != nil)
@@ -165,7 +170,8 @@ struct AgentSessionTests {
       arguments: ["ls"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let mounts = runtime.lastContainerConfiguration!.mounts
     let excludeMounts = mounts.filter {
@@ -195,7 +201,8 @@ struct AgentSessionTests {
       arguments: ["sh", "echo", "ok"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let entrypoint = runtime.lastContainerConfiguration!.entrypoint
     #expect(entrypoint.first == "/entrypoint-bootstrap/bootstrap")
@@ -224,7 +231,8 @@ struct AgentSessionTests {
       arguments: ["echo", "hello"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let entrypoint = runtime.lastContainerConfiguration!.entrypoint
     #expect(entrypoint == ["echo", "hello"])
@@ -251,7 +259,8 @@ struct AgentSessionTests {
       arguments: ["exit", "42"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    let exitCode = try await session.run()
+    try await session.start()
+    let exitCode = try await session.wait()
 
     #expect(exitCode == 42)
   }
@@ -271,7 +280,8 @@ struct AgentSessionTests {
       allocateTTY: true
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     if case .currentTerminal = runtime.lastContainerConfiguration!.io {
       // expected
@@ -295,7 +305,8 @@ struct AgentSessionTests {
       allocateTTY: false
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     if case .standardIO = runtime.lastContainerConfiguration!.io {
       // expected
@@ -323,7 +334,8 @@ struct AgentSessionTests {
       arguments: ["echo"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     var isDir: ObjCBool = false
     #expect(FileManager.default.fileExists(atPath: profileDir.path, isDirectory: &isDir))
@@ -345,7 +357,8 @@ struct AgentSessionTests {
       cpuCount: 4
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     #expect(runtime.lastContainerConfiguration?.cpuCount == 4)
   }
@@ -365,7 +378,8 @@ struct AgentSessionTests {
       memoryLimitMiB: 2048
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     #expect(runtime.lastContainerConfiguration?.memoryLimitMiB == 2048)
   }
@@ -470,7 +484,8 @@ struct ConfigurationTests {
       arguments: ["echo"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let mounts = runtime.lastContainerConfiguration!.mounts
     let cfgMount = mounts.first { $0.containerPath == "/agent-isolation/agents" }
@@ -499,7 +514,8 @@ struct ConfigurationTests {
       arguments: ["echo"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let env = runtime.lastContainerConfiguration!.environment
     #expect(env["AGENTC_CONFIGURATIONS"] == "claude,swift")
@@ -530,7 +546,8 @@ struct ConfigurationTests {
       arguments: ["echo"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let mounts = runtime.lastContainerConfiguration!.mounts
     let additionalMount = mounts.first { $0.containerPath == "/data/models" }
@@ -571,7 +588,8 @@ struct ConfigurationTests {
       arguments: ["hello"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let mounts = runtime.lastContainerConfiguration!.mounts
     #expect(mounts.contains { $0.containerPath == "/opt/tools" })
@@ -601,7 +619,8 @@ struct ConfigurationTests {
     )
     let session = AgentSession(config: config, runtime: runtime)
     // Should not throw — missing configs are skipped
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     // Still has the standard mounts
     let mounts = runtime.lastContainerConfiguration!.mounts
@@ -630,7 +649,8 @@ struct ConfigurationTests {
       arguments: ["original", "args"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run(entrypoint: ["/bin/bash", "-c", "ls -la"])
+    try await session.start(entrypoint: ["/bin/bash", "-c", "ls -la"])
+    _ = try await session.wait()
 
     let env = runtime.lastContainerConfiguration!.environment
     #expect(env["AGENTC_ENTRYPOINT_OVERRIDE"] == "1")
@@ -660,7 +680,8 @@ struct ConfigurationTests {
       arguments: ["--print", "hello"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let env = runtime.lastContainerConfiguration!.environment
     #expect(env["AGENTC_ENTRYPOINT_OVERRIDE"] == nil)
@@ -690,7 +711,8 @@ struct ConfigurationTests {
       arguments: []
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run(entrypoint: ["/bin/bash"])
+    try await session.start(entrypoint: ["/bin/bash"])
+    _ = try await session.wait()
 
     let env = runtime.lastContainerConfiguration!.environment
     #expect(env["AGENTC_ENTRYPOINT_OVERRIDE"] == "1")
@@ -724,7 +746,8 @@ struct ConfigurationTests {
       arguments: ["echo"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     // Verify the host directory was actually created
     let expectedSegment = AgentIsolationPathUtils.pathIdentifier(for: "/data/persistent")
@@ -736,5 +759,212 @@ struct ConfigurationTests {
     #expect(
       FileManager.default.fileExists(atPath: expectedHostDir.path, isDirectory: &isDir))
     #expect(isDir.boolValue)
+  }
+}
+
+// MARK: - Custom PTY Tests
+
+@Suite("AgentSession customPTY")
+struct AgentSessionCustomPTYTests {
+
+  /// Build a minimal mock session in a scratch directory.
+  private func makeSession(
+    customPTY: Bool,
+    runtime: MockRuntime = MockRuntime(config: .init(storagePath: "/tmp"))
+  ) throws -> (AgentSession<MockRuntime>, URL) {
+    let base = URL(fileURLWithPath: "/tmp/claudec-test-custompty-\(UUID().uuidString)")
+    let profileDir = base.appendingPathComponent("home")
+    let configsDir = base.appendingPathComponent("configurations")
+    try FileManager.default.createDirectory(at: configsDir, withIntermediateDirectories: true)
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: configsDir,
+      configurations: [],
+      arguments: ["echo"],
+      customPTY: customPTY
+    )
+    return (AgentSession(config: config, runtime: runtime), base)
+  }
+
+  @Test("customPTY defaults to false")
+  func customPTYDefault() {
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: URL(fileURLWithPath: "/tmp/home"),
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: URL(fileURLWithPath: "/tmp")
+    )
+    #expect(config.customPTY == false)
+  }
+
+  @Test("Without customPTY, write throws customPTYNotEnabled")
+  func writeWithoutCustomPTY() async throws {
+    let (session, base) = try makeSession(customPTY: false)
+    defer { try? FileManager.default.removeItem(at: base) }
+    try await session.start()
+
+    #expect(throws: AgentSessionError.customPTYNotEnabled) {
+      try session.write(Data("hello".utf8))
+    }
+
+    _ = try await session.wait()
+  }
+
+  @Test("Without customPTY, resize throws customPTYNotEnabled")
+  func resizeWithoutCustomPTY() async throws {
+    let (session, base) = try makeSession(customPTY: false)
+    defer { try? FileManager.default.removeItem(at: base) }
+    try await session.start()
+
+    await #expect(throws: AgentSessionError.customPTYNotEnabled) {
+      try await session.resize(cols: 80, rows: 24)
+    }
+
+    _ = try await session.wait()
+  }
+
+  @Test("Without customPTY, rawOut finishes immediately on start")
+  func rawOutFinishesWithoutCustomPTY() async throws {
+    let (session, base) = try makeSession(customPTY: false)
+    defer { try? FileManager.default.removeItem(at: base) }
+    try await session.start()
+
+    var collected: [[UInt8]] = []
+    for await chunk in session.rawOut {
+      collected.append(chunk)
+    }
+    #expect(collected.isEmpty)
+
+    _ = try await session.wait()
+  }
+
+  @Test("Without customPTY, IO honors allocateTTY (standardIO when false)")
+  func standardIOWhenCustomPTYFalse() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/claudec-test-custompty-std-\(UUID().uuidString)")
+    let profileDir = base.appendingPathComponent("home")
+    let configsDir = base.appendingPathComponent("configurations")
+    try FileManager.default.createDirectory(at: configsDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: configsDir,
+      configurations: [],
+      arguments: ["echo"],
+      allocateTTY: false,
+      customPTY: false
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    _ = try await session.wait()
+
+    if case .standardIO = runtime.lastContainerConfiguration!.io {
+      // expected
+    } else {
+      Issue.record("Expected .standardIO")
+    }
+  }
+
+  @Test("With customPTY, IO is .custom with isTerminal=true")
+  func customIOWhenCustomPTYTrue() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let (session, base) = try makeSession(customPTY: true, runtime: runtime)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    try await session.start()
+
+    if case .custom(_, _, _, let isTerminal) = runtime.lastContainerConfiguration!.io {
+      #expect(isTerminal == true)
+    } else {
+      Issue.record("Expected .custom IO in customPTY mode")
+    }
+
+    _ = try await session.wait()
+  }
+
+  @Test("With customPTY, resize forwards to container")
+  func resizeForwarded() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let (session, base) = try makeSession(customPTY: true, runtime: runtime)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    try await session.start()
+    try await session.resize(cols: 120, rows: 40)
+
+    let container = try #require(runtime.lastContainer)
+    #expect(container.resizeCalls.count == 1)
+    #expect(container.resizeCalls.first?.cols == 120)
+    #expect(container.resizeCalls.first?.rows == 40)
+
+    _ = try await session.wait()
+  }
+
+  @Test("Operations on an unstarted session throw notStarted")
+  func notStartedErrors() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let (session, base) = try makeSession(customPTY: true, runtime: runtime)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    #expect(throws: AgentSessionError.notStarted) {
+      try session.write(Data("x".utf8))
+    }
+    await #expect(throws: AgentSessionError.notStarted) {
+      try await session.resize(cols: 80, rows: 24)
+    }
+    await #expect(throws: AgentSessionError.notStarted) {
+      _ = try await session.wait()
+    }
+  }
+
+  @Test("start cannot be called twice")
+  func startTwice() async throws {
+    let (session, base) = try makeSession(customPTY: false)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    try await session.start()
+    await #expect(throws: AgentSessionError.alreadyStarted) {
+      try await session.start()
+    }
+    _ = try await session.wait()
+  }
+
+  @Test("timeout passed to start is forwarded to container.wait")
+  func timeoutForwarded() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let (session, base) = try makeSession(customPTY: false, runtime: runtime)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    try await session.start(timeout: 42)
+    _ = try await session.wait()
+
+    let container = try #require(runtime.lastContainer)
+    #expect(container.lastTimeoutInSeconds == 42)
+  }
+}
+
+// MARK: - Container Resize Default Tests
+
+@Suite("ContainerRuntimeContainer default resize")
+struct ContainerResizeDefaultTests {
+
+  final class MinimalContainer: ContainerRuntimeContainer, @unchecked Sendable {
+    var id: String { "mock" }
+    func wait(timeoutInSeconds: Int64?) async throws -> Int32 { 0 }
+    func stop() async throws {}
+    // No resize override — inherits the protocol default.
+  }
+
+  @Test("Default resize throws resizeNotSupported")
+  func defaultResizeThrows() async {
+    let container = MinimalContainer()
+    await #expect(throws: ContainerRuntimeError.resizeNotSupported) {
+      try await container.resize(cols: 80, rows: 24)
+    }
   }
 }

@@ -197,5 +197,15 @@
       let image = AppleContainerImage(ref: "test:latest", digest: "sha256:abc")
       let _: any Sendable = image
     }
+
+    @Test("AppleContainerContainer declares a resize method")
+    func containerHasResize() {
+      // A compile-time check: the type must satisfy the resize contract
+      // added to ContainerRuntimeContainer.
+      let resizeFunc: (AppleContainerContainer) -> (Int, Int) async throws -> Void = { c in
+        { cols, rows in try await c.resize(cols: cols, rows: rows) }
+      }
+      _ = resizeFunc
+    }
   }
 #endif

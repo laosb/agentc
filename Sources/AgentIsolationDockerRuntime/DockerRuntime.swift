@@ -305,6 +305,10 @@ public final class DockerContainer: ContainerRuntimeContainer, Sendable {
     try await client.stopContainer(id: id)
   }
 
+  public func resize(cols: Int, rows: Int) async throws {
+    try await client.resizeContainerTTY(id: id, width: cols, height: rows)
+  }
+
   private func setupSIGWINCH() {
     #if canImport(Darwin) || canImport(Glibc) || canImport(Musl)
       signal(SIGWINCH, SIG_IGN)

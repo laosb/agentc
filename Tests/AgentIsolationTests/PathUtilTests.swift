@@ -53,7 +53,8 @@ struct PathUtilTests {
       arguments: ["echo"]
     )
     let session = AgentSession(config: config, runtime: runtime)
-    _ = try await session.run()
+    try await session.start()
+    _ = try await session.wait()
 
     let workDir = runtime.lastContainerConfiguration!.workingDirectory!
     #expect(workDir == AgentIsolationPathUtils.workspaceContainerPath(for: wsDir))
