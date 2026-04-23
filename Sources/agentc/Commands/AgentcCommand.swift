@@ -17,6 +17,7 @@ struct AgentcCommand: AsyncParsableCommand {
       RunCommand.self,
       ShellCommand.self,
       InitCommand.self,
+      ProfilesCommand.self,
       VersionCommand.self,
       MigrateFromClaudecCommand.self,
     ],
