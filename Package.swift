@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.3
 import PackageDescription
 
 let package = Package(
@@ -32,7 +32,7 @@ let package = Package(
     .package(url: "https://github.com/apple/swift-nio.git", from: "2.97.0"),
     .package(url: "https://github.com/apple/swift-system.git", from: "1.6.4"),
     .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.33.1"),
-    .package(url: "https://github.com/swiftlang/swift-subprocess.git", from: "0.4.0"),
+    .package(url: "https://github.com/swiftlang/swift-subprocess.git", from: "0.5.0"),
   ],
   targets: [
     .target(
