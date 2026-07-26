@@ -17,6 +17,10 @@ struct ProjectSettingsDecodingTests {
           "excludes": [".git", "node_modules"],
           "configurations": ["claude", "copilot"],
           "additionalMounts": ["/data/models"],
+          "environment": {
+            "TZ": "America/Los_Angeles",
+            "LC_ALL": "en_US.UTF-8"
+          },
           "defaultArguments": ["--model", "opus"],
           "additionalArguments": ["--verbose"],
           "cpus": 4,
@@ -35,6 +39,12 @@ struct ProjectSettingsDecodingTests {
     #expect(agent.excludes == [".git", "node_modules"])
     #expect(agent.configurations == ["claude", "copilot"])
     #expect(agent.additionalMounts == ["/data/models"])
+    #expect(
+      agent.environment
+        == [
+          "TZ": "America/Los_Angeles",
+          "LC_ALL": "en_US.UTF-8",
+        ])
     #expect(agent.defaultArguments == ["--model", "opus"])
     #expect(agent.additionalArguments == ["--verbose"])
     #expect(agent.cpus == 4)
@@ -71,6 +81,7 @@ struct ProjectSettingsDecodingTests {
     #expect(agent.excludes == nil)
     #expect(agent.configurations == nil)
     #expect(agent.additionalMounts == nil)
+    #expect(agent.environment == nil)
     #expect(agent.defaultArguments == nil)
     #expect(agent.additionalArguments == nil)
     #expect(agent.memoryMiB == nil)

@@ -44,6 +44,9 @@ All fields are optional. Only the values you specify take effect.
     "excludes": ["<string>", ...],
     "configurations": ["<string>", ...],
     "additionalMounts": ["<string>", ...],
+    "environment": {
+      "<name>": "<value>"
+    },
     "defaultArguments": ["<string>", ...],
     "additionalArguments": ["<string>", ...],
     "cpus": "<int>",
@@ -63,6 +66,7 @@ All fields are optional. Only the values you specify take effect.
 | `agent.excludes` | `--exclude` | Workspace sub-folders to mask with empty overlays. |
 | `agent.configurations` | `--configurations`, `-c` | Agent configuration names to activate. |
 | `agent.additionalMounts` | `--additional-mount` | Additional host directories to mount. |
+| `agent.environment` | `--env`, `-e` | Environment variables passed to the container. |
 | `agent.defaultArguments` | positional args after `--` | Default arguments passed to the entrypoint. |
 | `agent.additionalArguments` | *(none)* | Arguments always appended to entrypoint args. |
 | `agent.cpus` | `--cpus` | Number of CPUs to allocate. |
@@ -82,6 +86,7 @@ When both CLI flags and project settings specify a value, the behavior depends o
 
 - `excludes` — CLI and project excludes are all applied.
 - `additionalMounts` — CLI and project mounts are all mounted.
+- `environment` — Variables are merged by name; CLI values override matching project values.
 
 **Arguments have special handling:**
 
@@ -123,6 +128,29 @@ For fields with override behavior, the full priority chain is:
   }
 }
 ```
+
+### Customize Locale and Time Zone
+
+```json
+{
+  "agent": {
+    "environment": {
+      "TZ": "America/Los_Angeles",
+      "LANG": "en_US.UTF-8",
+      "LC_ALL": "en_US.UTF-8"
+    }
+  }
+}
+```
+
+Use repeatable CLI options for one-off overrides:
+
+```sh
+agentc run --env TZ=America/Los_Angeles --env LC_ALL=en_US.UTF-8
+```
+
+Project settings provide defaults. A CLI value with the same name takes precedence.
+Variables used internally by agentc (`AGENTC_*`) are reserved and cannot be overridden.
 
 ### Use Image Entrypoint (No Bootstrap)
 

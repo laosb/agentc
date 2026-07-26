@@ -114,6 +114,40 @@ struct ProjectSettingsIntegrationTests {
     #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
   }
 
+  @Test("--agentc-folder applies agent.environment setting")
+  func agentcFolderAppliesEnvironment() async throws {
+    let base = URL(fileURLWithPath: "/tmp/__TEST_agentc_ps_env.\(UUID().uuidString.prefix(6))")
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let settingsDir = base.appendingPathComponent("settings")
+    try writeProjectSettings(
+      """
+      {
+        "agent": {
+          "environment": {
+            "TZ": "America/Los_Angeles",
+            "LC_ALL": "en_US.UTF-8"
+          }
+        }
+      }
+      """,
+      at: settingsDir)
+
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--no-update-image",
+        "--agentc-folder", settingsDir.appendingPathComponent(".agentc").path,
+        "--", "printf '%s|%s' \"$TZ\" \"$LC_ALL\"",
+      ]
+    )
+
+    #expect(result.exitCode == 0)
+    #expect(result.stdout == "America/Los_Angeles|en_US.UTF-8")
+  }
+
   // MARK: - CLI Override
 
   @Test("CLI --cpus overrides project settings agent.cpus")
@@ -143,6 +177,41 @@ struct ProjectSettingsIntegrationTests {
     #expect(result.exitCode == 0)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "3")
+  }
+
+  @Test("CLI --env overrides matching project environment variables")
+  func cliOverridesProjectEnvironment() async throws {
+    let base = URL(fileURLWithPath: "/tmp/__TEST_agentc_ps_envov.\(UUID().uuidString.prefix(6))")
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let settingsDir = base.appendingPathComponent("settings")
+    try writeProjectSettings(
+      """
+      {
+        "agent": {
+          "environment": {
+            "TZ": "Asia/Shanghai",
+            "LANG": "en_US.UTF-8"
+          }
+        }
+      }
+      """,
+      at: settingsDir)
+
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--no-update-image",
+        "--agentc-folder", settingsDir.appendingPathComponent(".agentc").path,
+        "--env", "TZ=Europe/Berlin",
+        "--", "printf '%s|%s' \"$TZ\" \"$LANG\"",
+      ]
+    )
+
+    #expect(result.exitCode == 0)
+    #expect(result.stdout == "Europe/Berlin|en_US.UTF-8")
   }
 
   // MARK: - Merge Behavior

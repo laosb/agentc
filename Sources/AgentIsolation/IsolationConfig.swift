@@ -44,6 +44,10 @@ public struct IsolationConfig: Sendable {
   /// Arguments forwarded to the container entrypoint.
   public var arguments: [String]
 
+  /// User-defined environment variables passed to the container.
+  /// Internal `AGENTC_*` variables take precedence when the session starts.
+  public var environment: [String: String]
+
   /// Whether to allocate a pseudo-TTY. Typically true when stdin is a terminal.
   public var allocateTTY: Bool
 
@@ -80,6 +84,7 @@ public struct IsolationConfig: Sendable {
     configurations: [String] = ["claude"],
     bootstrapMode: BootstrapMode = .imageDefault,
     arguments: [String] = [],
+    environment: [String: String] = [:],
     allocateTTY: Bool = false,
     cpuCount: Int = 1,
     memoryLimitMiB: Int = 1536,
@@ -95,6 +100,7 @@ public struct IsolationConfig: Sendable {
     self.configurations = configurations
     self.bootstrapMode = bootstrapMode
     self.arguments = arguments
+    self.environment = environment
     self.allocateTTY = allocateTTY
     self.cpuCount = cpuCount
     self.memoryLimitMiB = memoryLimitMiB

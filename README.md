@@ -24,6 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/laosb/agentc/main/install.sh | sh
 agentc run                          # start default agent (claude) in $PWD
 agentc run -c claude,copilot        # activate multiple configurations
 agentc run "explain this code"      # forward args to the agent entrypoint
+agentc run -e TZ=Europe/Berlin      # set a container environment variable
 agentc sh                           # open a shell in the container
 agentc sh -- ls -la /home/agent     # run a command inside the container
 agentc version                      # print version info

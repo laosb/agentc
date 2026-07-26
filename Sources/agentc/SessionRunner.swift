@@ -66,6 +66,7 @@ enum SessionRunner {
       configurations: configNames,
       bootstrapMode: bootstrapMode,
       arguments: arguments,
+      environment: options.resolveEnvironment(projectSettings: projectSettings),
       allocateTTY: allocateTTY,
       cpuCount: options.resolveCpuCount(projectSettings: projectSettings),
       memoryLimitMiB: options.resolveMemoryLimitMiB(projectSettings: projectSettings),
