@@ -7,6 +7,26 @@ import ArgumentParser
   import Foundation
 #endif
 
+struct EnvironmentVariableOption: ExpressibleByArgument, Sendable, Equatable {
+  let key: String
+  let value: String
+
+  init?(argument: String) {
+    guard let separator = argument.firstIndex(of: "="), separator != argument.startIndex else {
+      return nil
+    }
+
+    let key = String(argument[..<separator])
+    let value = String(argument[argument.index(after: separator)...])
+    guard !key.contains("\0"), !value.contains("\0") else {
+      return nil
+    }
+
+    self.key = key
+    self.value = value
+  }
+}
+
 struct SharedOptions: ParsableArguments {
   @Option(name: .shortAndLong, help: "Container runtime.")
   var runtime: RuntimeChoice?
@@ -54,6 +74,14 @@ struct SharedOptions: ParsableArguments {
     help: ArgumentHelp("Additional host directory to mount in the container.", valueName: "path")
   )
   var additionalMount: [String] = []
+
+  @Option(
+    name: .shortAndLong,
+    help: ArgumentHelp(
+      "Set a container environment variable. Repeat to set multiple variables.",
+      valueName: "KEY=VALUE")
+  )
+  var env: [EnvironmentVariableOption] = []
 
   @Option(
     name: [.short, .customLong("configurations")],
@@ -222,6 +250,16 @@ extension SharedOptions {
     var result = additionalMount.map { URL(fileURLWithPath: $0) }
     if let extras = projectSettings?.agent?.additionalMounts {
       result.append(contentsOf: extras.map { URL(fileURLWithPath: $0) })
+    }
+    return result
+  }
+
+  /// Resolve container environment variables.
+  /// Project settings provide defaults; CLI values override matching keys.
+  func resolveEnvironment(projectSettings: ProjectSettings? = nil) -> [String: String] {
+    var result = projectSettings?.agent?.environment ?? [:]
+    for variable in env {
+      result[variable.key] = variable.value
     }
     return result
   }

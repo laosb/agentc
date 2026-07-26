@@ -494,6 +494,36 @@
 
       try await runtime.removeContainer(container)
     }
+
+    @Test("runContainer passes environment variables")
+    func runContainerEnvironment() async throws {
+      let runtime = makeRuntime()
+      defer { Task { try? await runtime.shutdown() } }
+      try await runtime.prepare()
+
+      _ = try await runtime.pullImage(ref: "alpine:latest")
+
+      let stdout = MockWriter()
+      let containerConfig = ContainerConfiguration(
+        entrypoint: ["/bin/sh", "-c", "printf '%s|%s' \"$TZ\" \"$LC_ALL\""],
+        environment: [
+          "TZ": "America/Los_Angeles",
+          "LC_ALL": "en_US.UTF-8",
+        ],
+        io: .custom(stdin: EmptyReaderStream(), stdout: stdout, stderr: MockWriter())
+      )
+
+      let container = try await runtime.runContainer(
+        imageRef: "alpine:latest",
+        configuration: containerConfig
+      )
+
+      let exitCode = try await container.wait(timeoutInSeconds: 30)
+      try await runtime.removeContainer(container)
+
+      #expect(exitCode == 0)
+      #expect(stdout.string == "America/Los_Angeles|en_US.UTF-8")
+    }
   }
 
   // MARK: - Custom IO Integration Tests

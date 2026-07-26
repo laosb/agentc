@@ -53,6 +53,9 @@ struct InitCommandIntegrationTests {
         "--image", "custom:latest",
         "--configurations", "claude,copilot",
         "--exclude", "node_modules,.git",
+        "--env", "TZ=America/Los_Angeles",
+        "-e", "LC_ALL=en_US.UTF-8",
+        "-e", "EMPTY=",
       ]
     )
     #expect(result.exitCode == 0)
@@ -66,6 +69,30 @@ struct InitCommandIntegrationTests {
     #expect(agent["memoryMiB"] as? Int == 4096)
     #expect(agent["configurations"] as? [String] == ["claude", "copilot"])
     #expect(agent["excludes"] as? [String] == ["node_modules", ".git"])
+    let environment = agent["environment"] as? [String: String]
+    #expect(environment?["TZ"] == "America/Los_Angeles")
+    #expect(environment?["LC_ALL"] == "en_US.UTF-8")
+    #expect(environment?["EMPTY"] == "")
+  }
+
+  @Test("agentc init rejects malformed environment options")
+  func initRejectsMalformedEnvironment() async throws {
+    let base = URL(
+      fileURLWithPath: "/tmp/__TEST_agentc_init_env.\(UUID().uuidString.prefix(6))")
+    try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let result = await runAgentc(
+      args: [
+        "init",
+        base.path,
+        "--skip-container-init",
+        "--env", "MISSING_SEPARATOR",
+      ]
+    )
+
+    #expect(result.exitCode != 0)
+    #expect(!FileManager.default.fileExists(atPath: base.appendingPathComponent(".agentc").path))
   }
 
   @Test("agentc init with --profile writes profile to settings")

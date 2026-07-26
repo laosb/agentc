@@ -521,6 +521,44 @@ struct ConfigurationTests {
     #expect(env["AGENTC_CONFIGURATIONS"] == "claude,swift")
   }
 
+  @Test("Passes custom environment variables and reserves AGENTC names")
+  func passesCustomEnvironment() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/agentc-test-env-\(UUID().uuidString)")
+    let profileDir = base.appendingPathComponent("home")
+    let configsDir = try makeConfigsDir(configs: [:])
+    defer {
+      try? FileManager.default.removeItem(at: base)
+      try? FileManager.default.removeItem(at: configsDir)
+    }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: configsDir,
+      configurations: ["claude"],
+      arguments: ["echo"],
+      environment: [
+        "TZ": "America/Los_Angeles",
+        "LC_ALL": "en_US.UTF-8",
+        "EMPTY": "",
+        "AGENTC_CONFIGURATIONS": "overridden",
+        "AGENTC_ENTRYPOINT_OVERRIDE": "1",
+      ]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    _ = try await session.wait()
+
+    let environment = runtime.lastContainerConfiguration!.environment
+    #expect(environment["TZ"] == "America/Los_Angeles")
+    #expect(environment["LC_ALL"] == "en_US.UTF-8")
+    #expect(environment["EMPTY"] == "")
+    #expect(environment["AGENTC_CONFIGURATIONS"] == "claude")
+    #expect(environment["AGENTC_ENTRYPOINT_OVERRIDE"] == nil)
+  }
+
   @Test("Creates additional mounts from single configuration")
   func additionalMountsSingle() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))

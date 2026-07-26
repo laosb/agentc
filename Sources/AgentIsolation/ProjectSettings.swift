@@ -22,6 +22,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     public var excludes: [String]?
     public var configurations: [String]?
     public var additionalMounts: [String]?
+    public var environment: [String: String]?
     public var defaultArguments: [String]?
     public var additionalArguments: [String]?
     public var cpus: Int?
@@ -35,6 +36,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       excludes: [String]? = nil,
       configurations: [String]? = nil,
       additionalMounts: [String]? = nil,
+      environment: [String: String]? = nil,
       defaultArguments: [String]? = nil,
       additionalArguments: [String]? = nil,
       cpus: Int? = nil,
@@ -47,6 +49,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       self.excludes = excludes
       self.configurations = configurations
       self.additionalMounts = additionalMounts
+      self.environment = environment
       self.defaultArguments = defaultArguments
       self.additionalArguments = additionalArguments
       self.cpus = cpus

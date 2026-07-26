@@ -218,8 +218,8 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       break
     }
 
-    // Environment: pass configurations and optional entrypoint override to bootstrap
-    var environment: [String: String] = [:]
+    // Environment: start with user values, excluding reserved bootstrap controls.
+    var environment = config.environment.filter { !$0.key.hasPrefix("AGENTC_") }
     environment["AGENTC_CONFIGURATIONS"] = config.configurations.joined(separator: ",")
     if config.verbose {
       environment["AGENTC_VERBOSE"] = "1"

@@ -124,6 +124,11 @@ struct InitCommand: AsyncParsableCommand {
         excludes: excludes,
         configurations: configurations,
         additionalMounts: options.additionalMount.isEmpty ? nil : options.additionalMount,
+        environment: options.env.isEmpty
+          ? nil
+          : Dictionary(
+            options.env.map { ($0.key, $0.value) },
+            uniquingKeysWith: { _, latest in latest }),
         cpus: options.cpuCount ?? 1,
         memoryMiB: options.memoryLimitMiB ?? 1536,
         bootstrap: options.bootstrapScript,
