@@ -144,10 +144,11 @@
           containerConfig.process.workingDirectory = workDir
         }
 
-        // Environment
-        for (key, value) in configuration.environment {
-          containerConfig.process.environmentVariables.append("\(key)=\(value)")
-        }
+        // Environment: image defaults, with our values overriding matching names.
+        containerConfig.process.environmentVariables = AppleContainerEnvironment.merged(
+          imageDefaults: containerConfig.process.environmentVariables,
+          overrides: configuration.environment
+        )
 
         // Mounts
         for mount in configuration.mounts {

@@ -45,7 +45,8 @@ public struct IsolationConfig: Sendable {
   public var arguments: [String]
 
   /// User-defined environment variables passed to the container.
-  /// Internal `AGENTC_*` variables take precedence when the session starts.
+  /// The `AGENTC_*` namespace is reserved for internal bootstrap controls; names in it
+  /// are dropped when the session starts.
   public var environment: [String: String]
 
   /// Whether to allocate a pseudo-TTY. Typically true when stdin is a terminal.

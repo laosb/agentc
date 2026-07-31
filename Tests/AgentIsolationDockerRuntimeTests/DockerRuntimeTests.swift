@@ -343,7 +343,8 @@
 
   // MARK: - DockerRuntime Integration Tests
 
-  private func isDockerAvailable() -> Bool {
+  /// Shared by the integration suites across this target's test files.
+  func isDockerAvailable() -> Bool {
     FileManager.default.fileExists(atPath: "/var/run/docker.sock")
       || ProcessInfo.processInfo.environment["CLAUDEC_DOCKER_ENDPOINT"] != nil
   }

@@ -130,17 +130,27 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     try await client.removeImage(nameOrDigest: digest)
   }
 
-  public func runContainer(
+  /// Whether the container should be created with a pseudo-TTY.
+  static func usesTTY(for io: ContainerConfiguration.IO) -> Bool {
+    switch io {
+    case .currentTerminal: return true
+    case .custom(_, _, _, let isTerminal): return isTerminal
+    default: return false
+    }
+  }
+
+  /// Build the Docker Engine create-container payload for a configuration.
+  ///
+  /// Pure translation of ``ContainerConfiguration`` to Docker's wire format, kept separate
+  /// from ``runContainer(imageRef:configuration:)`` so it can be tested without a daemon.
+  ///
+  /// `Env` is left `nil` when no variables are set, so the image's own `ENV` is untouched.
+  /// Otherwise the daemon merges these entries over the image's by name, which is why we
+  /// pass them through as-is rather than reconciling anything here.
+  static func makeCreateRequest(
     imageRef: String,
     configuration: ContainerConfiguration
-  ) async throws -> DockerContainer {
-    let useTTY: Bool
-    switch configuration.io {
-    case .currentTerminal: useTTY = true
-    case .custom(_, _, _, let isTerminal): useTTY = isTerminal
-    default: useTTY = false
-    }
-
+  ) -> DockerCreateContainerRequest {
     // Build bind mounts
     var binds: [String] = []
     for mount in configuration.mounts {
@@ -148,23 +158,24 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
       binds.append("\(mount.hostPath):\(mount.containerPath):\(opts)")
     }
 
-    // Build environment
+    // Build environment. Sorted so the same configuration always produces the same
+    // payload — `environment` is an unordered dictionary.
     let envVars: [String]? =
       configuration.environment.isEmpty
       ? nil
-      : configuration.environment.map { "\($0.key)=\($0.value)" }
+      : configuration.environment.keys.sorted().map { "\($0)=\(configuration.environment[$0]!)" }
 
-    // Create container – when a custom entrypoint override is requested, set Docker's
-    // Entrypoint field to replace the image's built-in ENTRYPOINT. Otherwise, use Cmd
-    // so the image's ENTRYPOINT receives these as arguments.
+    // When a custom entrypoint override is requested, set Docker's Entrypoint field to
+    // replace the image's built-in ENTRYPOINT. Otherwise, use Cmd so the image's
+    // ENTRYPOINT receives these as arguments.
     let entryArgs = configuration.entrypoint.isEmpty ? nil : configuration.entrypoint
-    let createConfig = DockerCreateContainerRequest(
+    return DockerCreateContainerRequest(
       Image: imageRef,
       Entrypoint: configuration.overridesImageEntrypoint ? entryArgs : nil,
       Cmd: configuration.overridesImageEntrypoint ? nil : entryArgs,
       Env: envVars,
       WorkingDir: configuration.workingDirectory,
-      Tty: useTTY,
+      Tty: Self.usesTTY(for: configuration.io),
       OpenStdin: true,
       AttachStdin: true,
       AttachStdout: true,
@@ -177,6 +188,16 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
         Init: true
       )
     )
+  }
+
+  public func runContainer(
+    imageRef: String,
+    configuration: ContainerConfiguration
+  ) async throws -> DockerContainer {
+    let useTTY = Self.usesTTY(for: configuration.io)
+
+    let createConfig = Self.makeCreateRequest(
+      imageRef: imageRef, configuration: configuration)
 
     let containerId = try await client.createContainer(config: createConfig)
 
