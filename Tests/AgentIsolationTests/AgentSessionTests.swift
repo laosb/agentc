@@ -635,6 +635,75 @@ struct ConfigurationTests {
     #expect(mounts.contains { $0.containerPath == "/var/lib/extra" })
   }
 
+  @Test("Creates additional mounts from a dependency configuration")
+  func additionalMountsFromDependency() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/agentc-test-depmnt-\(UUID().uuidString)")
+    let profileDir = base.appendingPathComponent("home")
+    let configsDir = try makeConfigsDir(configs: [
+      "toolchain": [
+        "additionalMounts": ["/opt/toolchain"]
+      ],
+      "myagent": [
+        "dependsOn": ["toolchain"],
+        "additionalMounts": ["/data/cache"],
+        "entrypoint": ["myagent"],
+      ],
+    ])
+    defer {
+      try? FileManager.default.removeItem(at: base)
+      try? FileManager.default.removeItem(at: configsDir)
+    }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: configsDir,
+      configurations: ["myagent"],
+      arguments: ["echo"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    _ = try await session.wait()
+
+    let mounts = runtime.lastContainerConfiguration!.mounts
+    #expect(mounts.contains { $0.containerPath == "/opt/toolchain" })
+    #expect(mounts.contains { $0.containerPath == "/data/cache" })
+    #expect(
+      runtime.lastContainerConfiguration!.environment["AGENTC_CONFIGURATIONS"]
+        == "toolchain,myagent")
+  }
+
+  @Test("Surfaces dependency cycles when starting")
+  func dependencyCycleThrows() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/agentc-test-depcycle-\(UUID().uuidString)")
+    let profileDir = base.appendingPathComponent("home")
+    let configsDir = try makeConfigsDir(configs: [
+      "a": ["dependsOn": ["b"]],
+      "b": ["dependsOn": ["a"]],
+    ])
+    defer {
+      try? FileManager.default.removeItem(at: base)
+      try? FileManager.default.removeItem(at: configsDir)
+    }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: configsDir,
+      configurations: ["a"],
+      arguments: ["echo"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    await #expect(throws: AgentConfigurationError.dependencyCycle(["a", "b", "a"])) {
+      try await session.start()
+    }
+    #expect(runtime.lastContainerConfiguration == nil)
+  }
+
   @Test("Skips configurations with missing settings.json gracefully")
   func missingSettingsJson() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))

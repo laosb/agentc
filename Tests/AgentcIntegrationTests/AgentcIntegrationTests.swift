@@ -109,6 +109,52 @@ struct AgentcIntegrationTests {
     #expect(result.output.contains("sentinel_agentc"))
   }
 
+  @Test("dependsOn activates the dependency first and inherits its entrypoint")
+  func dependsOnConfiguration() async throws {
+    let dir = URL(fileURLWithPath: "/tmp/__TEST_agentc_dependson.\(UUID().uuidString.prefix(6))")
+    let homeDir = dir.appendingPathComponent("home")
+    try stubProfileHome(at: homeDir)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    // `toolchain` prepares a marker and owns the entrypoint that prints it;
+    // `myagent` only depends on it, so both must run — dependency first.
+    let configsDir = dir.appendingPathComponent("configurations")
+    let fm = FileManager.default
+    let toolchainDir = configsDir.appendingPathComponent("toolchain")
+    try fm.createDirectory(at: toolchainDir, withIntermediateDirectories: true)
+    try #"{"v":0,"entrypoint":["/bin/cat","/home/agent/dependsOn-marker"]}"#.write(
+      to: toolchainDir.appendingPathComponent("settings.json"),
+      atomically: true, encoding: .utf8)
+    let prepareScript = toolchainDir.appendingPathComponent("prepare.sh")
+    try "#!/bin/sh\necho dependency_prepared > /home/agent/dependsOn-marker\n".write(
+      to: prepareScript, atomically: true, encoding: .utf8)
+    try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: prepareScript.path)
+
+    let myAgentDir = configsDir.appendingPathComponent("myagent")
+    try fm.createDirectory(at: myAgentDir, withIntermediateDirectories: true)
+    try #"{"v":0,"dependsOn":["toolchain"]}"#.write(
+      to: myAgentDir.appendingPathComponent("settings.json"),
+      atomically: true, encoding: .utf8)
+
+    // Look like a freshly pulled clone so ensureRepo neither clones nor pulls.
+    try fm.createDirectory(
+      at: configsDir.appendingPathComponent(".git"), withIntermediateDirectories: true)
+    fm.createFile(
+      atPath: configsDir.appendingPathComponent(".agentc-last-pull").path, contents: nil)
+
+    let result = await runAgentc(
+      args: [
+        "run",
+        "--profile-dir", dir.path,
+        "--configurations-dir", configsDir.path,
+        "--no-update-image",
+        "-c", "myagent",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.output.contains("dependency_prepared"))
+  }
+
   @Test("--workspace mounts custom directory")
   func workspaceFlag() async throws {
     let ws = URL(fileURLWithPath: "/tmp/__TEST_agentc_ws.\(UUID().uuidString.prefix(6))")

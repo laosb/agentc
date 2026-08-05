@@ -36,6 +36,9 @@ public struct IsolationConfig: Sendable {
   public var configurationsDir: URL
 
   /// Ordered list of configuration names to activate.
+  ///
+  /// Each configuration's `dependsOn` entries are expanded before the session
+  /// starts, so dependencies are activated first; see ``AgentConfigurationResolver``.
   public var configurations: [String]
 
   /// Controls how the container entrypoint is set up.
