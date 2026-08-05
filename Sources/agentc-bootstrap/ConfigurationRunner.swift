@@ -4,6 +4,7 @@
 
   /// Settings from an agent configuration's settings.json.
   private struct ConfigSettings: Decodable {
+    var dependsOn: [String]?
     var entrypoint: [String]?
     var additionalBinPaths: [String]?
     var additionalMounts: [String]?
@@ -13,15 +14,17 @@
     /// Process agent configurations and exec the entrypoint. Does not return on success.
     static func run(arguments: [String]) throws {
       let configurationsDir = "/agent-isolation/agents"
-      let configurations =
+      let requested =
         (Helpers.envVar("AGENTC_CONFIGURATIONS") ?? "claude")
         .split(separator: ",")
-        .map { sub -> String in
-          var s = sub[...]
-          while s.first?.isWhitespace == true { s = s.dropFirst() }
-          while s.last?.isWhitespace == true { s = s.dropLast() }
-          return String(s)
-        }
+        .map { trimmingWhitespace($0) }
+        .filter { !$0.isEmpty }
+
+      // Expand `dependsOn` so every configuration is set up after the ones it
+      // depends on. The host normally passes an already-expanded list; expanding
+      // again is a no-op, and it keeps the bootstrap correct on its own.
+      let (configurations, settingsByName) = try resolve(
+        requested: requested, in: configurationsDir)
 
       let home = Helpers.envVar("HOME") ?? "/home/agent"
 
@@ -33,20 +36,10 @@
 
       for configName in configurations {
         let configDir = "\(configurationsDir)/\(configName)"
-        let settingsPath = "\(configDir)/settings.json"
-
-        guard access(settingsPath, F_OK) == 0 else {
-          throw BootstrapError.configurationError(
-            "configuration '\(configName)' not found at \(settingsPath)")
-        }
-
-        let settingsData = try Data(
-          contentsOf: URL(fileURLWithPath: settingsPath))
-        let settings = try JSONDecoder().decode(
-          ConfigSettings.self, from: settingsData)
+        let settings = settingsByName[configName]
 
         // Add additional bin paths to PATH.
-        for binPath in settings.additionalBinPaths ?? [] {
+        for binPath in settings?.additionalBinPaths ?? [] {
           let expanded = binPath.replacing("$HOME", with: home)
           path = "\(expanded):\(path)"
         }
@@ -70,7 +63,11 @@
           }
         }
 
-        lastEntrypoint = settings.entrypoint
+        // The last configuration that defines an entrypoint wins, so a
+        // configuration may depend on another purely to extend its setup.
+        if let entrypoint = settings?.entrypoint, !entrypoint.isEmpty {
+          lastEntrypoint = entrypoint
+        }
       }
 
       // Finalize PATH for the exec.
@@ -91,10 +88,10 @@
         Helpers.execReplace(command: cmd)
       }
 
-      // Execute the last configuration's entrypoint with remaining CLI args appended.
-      guard let entrypoint = lastEntrypoint, !entrypoint.isEmpty else {
+      // Execute the resolved entrypoint with remaining CLI args appended.
+      guard let entrypoint = lastEntrypoint else {
         throw BootstrapError.configurationError(
-          "no entrypoint defined in last configuration")
+          "no entrypoint defined in configurations: \(configurations.joined(separator: ","))")
       }
 
       // Fall back to /bin/sh when the configured entrypoint shell isn't available.
@@ -103,6 +100,68 @@
         finalEntrypoint[0] = "/bin/sh"
       }
       Helpers.execReplace(command: finalEntrypoint + arguments)
+    }
+
+    // MARK: - Dependency resolution
+
+    /// Expand `dependsOn` into a flat activation order, loading each configuration once.
+    ///
+    /// Dependencies are visited depth-first and emitted before the configuration
+    /// that requires them, so the requested configuration comes last and its
+    /// entrypoint is the one that gets exec'd. Repeats keep their earliest position.
+    private static func resolve(
+      requested: [String], in configurationsDir: String
+    ) throws -> (order: [String], settings: [String: ConfigSettings]) {
+      var order: [String] = []
+      var emitted: Set<String> = []
+      var visiting: [String] = []
+      var loaded: [String: ConfigSettings] = [:]
+
+      func load(_ name: String) throws -> ConfigSettings {
+        if let cached = loaded[name] { return cached }
+        let settingsPath = "\(configurationsDir)/\(name)/settings.json"
+        guard access(settingsPath, F_OK) == 0 else {
+          throw BootstrapError.configurationError(
+            "configuration '\(name)' not found at \(settingsPath)")
+        }
+        let settingsData = try Data(contentsOf: URL(fileURLWithPath: settingsPath))
+        let settings = try JSONDecoder().decode(ConfigSettings.self, from: settingsData)
+        loaded[name] = settings
+        return settings
+      }
+
+      func visit(_ name: String) throws {
+        guard !emitted.contains(name) else { return }
+        if let start = visiting.firstIndex(of: name) {
+          let cycle = (visiting[start...] + [name]).joined(separator: " -> ")
+          throw BootstrapError.configurationError(
+            "dependency cycle in configurations: \(cycle)")
+        }
+
+        visiting.append(name)
+        for dependency in try load(name).dependsOn ?? [] {
+          let dependency = trimmingWhitespace(dependency[...])
+          guard !dependency.isEmpty else { continue }
+          try visit(dependency)
+        }
+        visiting.removeLast()
+
+        emitted.insert(name)
+        order.append(name)
+      }
+
+      for name in requested {
+        try visit(name)
+      }
+      return (order, loaded)
+    }
+
+    /// Trim leading and trailing whitespace (`CharacterSet` is unavailable here).
+    private static func trimmingWhitespace(_ substring: Substring) -> String {
+      var slice = substring
+      while slice.first?.isWhitespace == true { slice = slice.dropFirst() }
+      while slice.last?.isWhitespace == true { slice = slice.dropLast() }
+      return String(slice)
     }
   }
 #endif

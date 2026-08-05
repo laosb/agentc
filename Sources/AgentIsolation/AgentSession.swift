@@ -6,11 +6,6 @@ import Synchronization
   import Foundation
 #endif
 
-/// Settings from an agent configuration's settings.json.
-private struct AgentConfigurationSettings: Decodable {
-  var additionalMounts: [String]?
-}
-
 /// Errors surfaced by ``AgentSession``.
 public enum AgentSessionError: Error, Sendable {
   /// ``AgentSession/write(_:)`` or ``AgentSession/resize(cols:rows:)`` was called
@@ -109,6 +104,14 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       stdinContinuation.finish()
     }
 
+    // Expand `dependsOn` so dependencies are set up before the configurations
+    // that require them, and the container sees the same list the host mounts for.
+    // Resolved up front so a broken dependency graph fails before any runtime work.
+    let configurations = try AgentConfigurationResolver.resolve(
+      configurations: config.configurations,
+      in: config.configurationsDir
+    )
+
     try await runtime.prepare()
 
     let canonicalWorkspace = AgentIsolationPathUtils.resolveSymlinksWithPlatformConsiderations(
@@ -163,12 +166,10 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
     // Additional mounts from agent configurations
     let additionalMountsDir = config.profileHomeDir.deletingLastPathComponent()
       .appendingPathComponent("additionalMounts")
-    for configName in config.configurations {
-      let settingsURL = config.configurationsDir
-        .appendingPathComponent(configName)
-        .appendingPathComponent("settings.json")
-      guard let data = try? Data(contentsOf: settingsURL) else { continue }
-      guard let settings = try? JSONDecoder().decode(AgentConfigurationSettings.self, from: data)
+    for configName in configurations {
+      guard
+        let settings = AgentConfigurationSettings.load(
+          name: configName, in: config.configurationsDir)
       else { continue }
       for containerPath in settings.additionalMounts ?? [] {
         guard !containerPath.isEmpty else { continue }
@@ -220,7 +221,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
 
     // Environment: start with user values, excluding reserved bootstrap controls.
     var environment = config.environment.filter { !$0.key.hasPrefix("AGENTC_") }
-    environment["AGENTC_CONFIGURATIONS"] = config.configurations.joined(separator: ",")
+    environment["AGENTC_CONFIGURATIONS"] = configurations.joined(separator: ",")
     if config.verbose {
       environment["AGENTC_VERBOSE"] = "1"
     }

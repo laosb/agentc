@@ -45,7 +45,7 @@ Profiles are stored at `~/.agentc/profiles/<name>/`.
 
 ### Configurations
 
-Agent configurations are modular setup recipes. Each configuration provides a `prepare.sh` script and optional additional settings. The last configuration's entrypoint is used.
+Agent configurations are modular setup recipes. Each configuration provides a `prepare.sh` script and optional additional settings. A configuration may declare `dependsOn` to pull in other configurations, which are always activated before it. The last activated configuration that defines an entrypoint provides the command to run.
 
 ```sh
 # makes sure both Claude Code + GitHub Copilot CLI installed, but invokes GitHub Copilot CLI
