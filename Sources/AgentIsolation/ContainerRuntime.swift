@@ -70,9 +70,30 @@ public struct ContainerRuntimeConfiguration: Sendable {
   public var storagePath: String
   public var endpoint: String?
 
-  public init(storagePath: String, endpoint: String? = nil) {
+  /// An explicit low-level runtime (OCI runtime binary or containerd shim) to run
+  /// containers with — Docker's `HostConfig.Runtime`, for example.
+  ///
+  /// Runtime names are administrator-defined aliases, so this is an opaque value passed
+  /// through to the runtime unvalidated. When `nil`, a conforming runtime is free to pick
+  /// one itself; ``AgentIsolationDockerRuntime`` discovers what the daemon offers and
+  /// prefers the strongest isolation available.
+  public var ociRuntime: String?
+
+  /// Invoked with user-facing security or configuration warnings raised while setting up
+  /// the runtime. Messages are multi-line and pre-formatted; the host decides where they
+  /// go. When `nil`, the runtime falls back to its logger.
+  public var warningHandler: (@Sendable (String) -> Void)?
+
+  public init(
+    storagePath: String,
+    endpoint: String? = nil,
+    ociRuntime: String? = nil,
+    warningHandler: (@Sendable (String) -> Void)? = nil
+  ) {
     self.storagePath = storagePath
     self.endpoint = endpoint
+    self.ociRuntime = ociRuntime
+    self.warningHandler = warningHandler
   }
 }
 

@@ -102,6 +102,15 @@ struct SharedOptions: ParsableArguments {
   var dockerEndpoint: String?
 
   @Option(
+    name: .long,
+    help: ArgumentHelp(
+      "Docker runtime to run the container with (e.g. kata, runsc, runc). "
+        + "Defaults to the strongest isolation the daemon offers.",
+      valueName: "name")
+  )
+  var dockerRuntime: String?
+
+  @Option(
     name: .customLong("cpus"),
     help: "Number of CPUs to allocate to the container (default: 1).")
   var cpuCount: Int?
@@ -232,6 +241,19 @@ extension SharedOptions {
   /// Resolve image reference. CLI flag → project settings → default.
   func resolveImage(projectSettings: ProjectSettings? = nil) -> String {
     image ?? projectSettings?.agent?.image ?? "ghcr.io/laosb/claudec:latest"
+  }
+
+  /// Resolve the explicit Docker runtime. CLI flag → project settings → nil (auto-select).
+  ///
+  /// Returns the value verbatim — runtime names are administrator-defined aliases, and
+  /// Docker can invoke containerd shims that never appear in its registered-runtime list,
+  /// so there is nothing here we could meaningfully validate against.
+  func resolveDockerRuntime(projectSettings: ProjectSettings? = nil) -> String? {
+    let value = dockerRuntime ?? projectSettings?.docker?.runtime
+    guard let trimmed = value?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty else {
+      return nil
+    }
+    return trimmed
   }
 
   /// Resolve CPU count. CLI flag → project settings → 1.

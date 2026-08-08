@@ -78,6 +78,23 @@ To skip the bootstrap and use the image's own entrypoint:
 agentc run --respect-image-entrypoint -i my-image:latest
 ```
 
+### Container Isolation (Docker runtime)
+
+Agents run code you did not write, so on the Docker backend `agentc` asks the daemon which
+runtimes it has and prefers the strongest isolation available: **Kata Containers** (a VM per
+container) over **gVisor** (`runsc`) over **`runc`** (shares the host kernel). If only `runc`
+is available, `agentc` uses it and prints a one-time warning with setup instructions.
+
+Pick one yourself — including `runc`, which also silences the warning:
+
+```sh
+agentc run --docker-runtime runsc
+agentc run --docker-runtime runc     # "I know, runc is fine here"
+```
+
+See [docs/docker-runtimes.md](./docs/docker-runtimes.md). The Apple Container runtime
+already gives every container its own VM, so this does not apply on macOS.
+
 ## Architecture
 
 ```

@@ -37,9 +37,17 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
   private let endpoint: String
   private let logger = Logger(label: "com.agentc.docker-runtime")
 
+  /// An explicit runtime alias from configuration. Honored verbatim, never validated.
+  private let configuredRuntime: String?
+  private let warningHandler: (@Sendable (String) -> Void)?
+  /// Resolved once and reused, so the warning is shown at most once per runtime.
+  private let selection = Mutex<DockerRuntimeSelection?>(nil)
+
   public required init(config: ContainerRuntimeConfiguration) {
     self.endpoint = config.endpoint ?? Self.autoDetectEndpoint()
     self.client = DockerAPIClient(endpoint: self.endpoint)
+    self.configuredRuntime = config.ociRuntime
+    self.warningHandler = config.warningHandler
   }
 
   /// Auto-detect the Docker socket path by checking common locations.
@@ -82,6 +90,51 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
 
   public func prepare() async throws {
     try await client.ping()
+    await resolveRuntimeSelection()
+  }
+
+  // MARK: - Runtime selection
+
+  /// The runtime this instance runs containers with, resolved on first use.
+  ///
+  /// Kata is preferred over gVisor over `runc`; see ``DockerRuntimeSelection/select(configured:info:)``.
+  public func selectedRuntime() async -> DockerRuntimeSelection {
+    await resolveRuntimeSelection()
+  }
+
+  @discardableResult
+  private func resolveRuntimeSelection() async -> DockerRuntimeSelection {
+    if let cached = selection.withLock({ $0 }) { return cached }
+
+    // An explicit configuration is taken at face value, so there is nothing to discover.
+    // It may well name a containerd shim the daemon never registered.
+    var info: DockerInfo?
+    if configuredRuntime == nil {
+      do {
+        info = try await client.info()
+      } catch {
+        // Discovery is advisory: a daemon that won't describe itself still runs containers.
+        logger.debug("Failed to read Docker daemon info: \(error)")
+      }
+    }
+
+    let resolved = DockerRuntimeSelection.select(configured: configuredRuntime, info: info)
+    let isFirstResolution = selection.withLock { stored -> Bool in
+      guard stored == nil else { return false }
+      stored = resolved
+      return true
+    }
+
+    guard isFirstResolution else { return selection.withLock { $0 } ?? resolved }
+
+    if let warning = resolved.warning {
+      if let warningHandler {
+        warningHandler(warning)
+      } else {
+        logger.warning("\(warning)")
+      }
+    }
+    return resolved
   }
 
   /// Shut down the HTTP client. Call when the runtime is no longer needed.
@@ -147,9 +200,13 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
   /// `Env` is left `nil` when no variables are set, so the image's own `ENV` is untouched.
   /// Otherwise the daemon merges these entries over the image's by name, which is why we
   /// pass them through as-is rather than reconciling anything here.
+  ///
+  /// `runtimeName` is the only isolation-relevant field we set; a `nil` leaves
+  /// `HostConfig.Runtime` out of the payload so the daemon applies its own default.
   static func makeCreateRequest(
     imageRef: String,
-    configuration: ContainerConfiguration
+    configuration: ContainerConfiguration,
+    runtimeName: String? = nil
   ) -> DockerCreateContainerRequest {
     // Build bind mounts
     var binds: [String] = []
@@ -185,7 +242,8 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
         Memory: Int64(configuration.memoryLimitMiB) * 1024 * 1024,
         NanoCpus: Int64(configuration.cpuCount) * 1_000_000_000,
         CpusetCpus: "0-\(configuration.cpuCount - 1)",
-        Init: true
+        Init: true,
+        Runtime: runtimeName
       )
     )
   }
@@ -196,10 +254,18 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
   ) async throws -> DockerContainer {
     let useTTY = Self.usesTTY(for: configuration.io)
 
+    let runtime = await resolveRuntimeSelection()
     let createConfig = Self.makeCreateRequest(
-      imageRef: imageRef, configuration: configuration)
+      imageRef: imageRef, configuration: configuration, runtimeName: runtime.name)
 
-    let containerId = try await client.createContainer(config: createConfig)
+    let containerId: String
+    do {
+      containerId = try await client.createContainer(config: createConfig)
+    } catch {
+      // Never retry on the daemon's default: a misconfigured Kata/gVisor runtime would
+      // otherwise silently drop the isolation boundary the user is relying on.
+      throw Self.surfaceRuntimeFailure(error, runtime: runtime)
+    }
 
     // Set up terminal for TTY mode — only when using the actual current terminal
     var terminalState: DockerTerminalState?
@@ -253,6 +319,30 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
       terminalState: terminalState,
       useTTY: useTTY
     )
+  }
+
+  /// Wrap a create failure that is attributable to the selected runtime, so the user sees
+  /// *which* runtime the daemon rejected — and that nothing was retried without it —
+  /// rather than a bare "failed to create container".
+  ///
+  /// Plain `runc` selections are left alone: there is no isolation decision to explain, and
+  /// the underlying error stands on its own. So are failures the daemon blames on something
+  /// else (a missing image, a bad mount), which would only be muddied by runtime talk.
+  static func surfaceRuntimeFailure(
+    _ error: any Error, runtime: DockerRuntimeSelection
+  ) -> any Error {
+    guard let name = runtime.name, runtime.kind != .standard,
+      case DockerRuntimeError.apiError(_, let message) = error
+    else {
+      return error
+    }
+    // Docker's wording varies ("unknown or invalid runtime name", "failed to start shim"),
+    // but a runtime rejection always names one of the two.
+    let lowercased = message.lowercased()
+    guard lowercased.contains("runtime") || lowercased.contains("shim") else {
+      return error
+    }
+    return DockerRuntimeError.runtimeUnavailable(runtime: name, reason: message)
   }
 
   public func removeContainer(_ container: DockerContainer) async throws {
@@ -374,6 +464,8 @@ public enum DockerRuntimeError: LocalizedError {
   case apiError(Int, String)
   case attachFailed(String)
   case socketError(String)
+  /// The daemon refused to create a container with the selected non-default runtime.
+  case runtimeUnavailable(runtime: String, reason: String)
 
   public var errorDescription: String? {
     switch self {
@@ -389,6 +481,13 @@ public enum DockerRuntimeError: LocalizedError {
       return "Failed to attach to container: \(msg)"
     case .socketError(let msg):
       return "Socket error: \(msg)"
+    case .runtimeUnavailable(let runtime, let reason):
+      return """
+        Docker refused to create a container with the `\(runtime)` runtime: \(reason)
+        Falling back to the default runtime would remove the isolation boundary this \
+        runtime was chosen for, so the container was not started. Fix the runtime on the \
+        Docker host, or select a different one with `--docker-runtime <name>`.
+        """
     }
   }
 }

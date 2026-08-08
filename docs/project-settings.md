@@ -53,6 +53,9 @@ All fields are optional. Only the values you specify take effect.
     "memoryMiB": "<int>",
     "bootstrap": "<string>",
     "respectImageEntrypoint": "<bool>"
+  },
+  "docker": {
+    "runtime": "<string>"
   }
 }
 ```
@@ -73,6 +76,7 @@ All fields are optional. Only the values you specify take effect.
 | `agent.memoryMiB` | `--memory-mib` | Container memory limit in MiB. |
 | `agent.bootstrap` | `--bootstrap` | Path to a custom bootstrap/entrypoint script. |
 | `agent.respectImageEntrypoint` | `--respect-image-entrypoint` | Use the image's built-in entrypoint. |
+| `docker.runtime` | `--docker-runtime` | Docker runtime to run containers with (e.g. `kata`, `runsc`, `runc`). Defaults to the strongest isolation the daemon offers — see [Docker Runtime Selection](docker-runtimes.md). |
 
 ### Override and Merge Rules
 
@@ -80,7 +84,7 @@ When both CLI flags and project settings specify a value, the behavior depends o
 
 **Override** (CLI wins, project settings used as fallback):
 
-- `image`, `profile`, `configurations`, `cpus`, `memoryMiB`, `bootstrap`, `respectImageEntrypoint`
+- `image`, `profile`, `configurations`, `cpus`, `memoryMiB`, `bootstrap`, `respectImageEntrypoint`, `docker.runtime`
 
 **Merge** (both sets are combined):
 

@@ -11,9 +11,26 @@
 /// only the values you specify take effect.
 public struct ProjectSettings: Codable, Sendable, Equatable {
   public var agent: AgentSettings?
+  public var docker: DockerSettings?
 
-  public init(agent: AgentSettings? = nil) {
+  public init(agent: AgentSettings? = nil, docker: DockerSettings? = nil) {
     self.agent = agent
+    self.docker = docker
+  }
+
+  /// Settings specific to the Docker runtime backend.
+  public struct DockerSettings: Codable, Sendable, Equatable {
+    /// The runtime to run containers with, e.g. `kata`, `runsc`, or `runc`.
+    ///
+    /// Runtime names are administrator-defined aliases and Docker can also invoke
+    /// fully-qualified containerd shims that are not registered with the daemon, so this
+    /// value is passed through unvalidated. Setting it also opts out of the security
+    /// warning shown when only `runc` is available.
+    public var runtime: String?
+
+    public init(runtime: String? = nil) {
+      self.runtime = runtime
+    }
   }
 
   public struct AgentSettings: Codable, Sendable, Equatable {

@@ -53,12 +53,28 @@ struct ProjectSettingsDecodingTests {
     #expect(agent.respectImageEntrypoint == true)
   }
 
+  @Test("Decodes the docker runtime setting")
+  func decodesDockerRuntime() throws {
+    let json = """
+      {
+        "agent": { "image": "custom:v1" },
+        "docker": { "runtime": "kata" }
+      }
+      """
+    let settings = try JSONDecoder().decode(
+      ProjectSettings.self, from: Data(json.utf8))
+
+    #expect(settings.agent?.image == "custom:v1")
+    #expect(settings.docker?.runtime == "kata")
+  }
+
   @Test("Decodes empty object")
   func decodesEmpty() throws {
     let json = "{}"
     let settings = try JSONDecoder().decode(
       ProjectSettings.self, from: Data(json.utf8))
     #expect(settings.agent == nil)
+    #expect(settings.docker == nil)
   }
 
   @Test("Decodes partial agent fields")
