@@ -47,6 +47,121 @@ jobs:
       - name: Run unit tests
         run: swift test --disable-default-traits --traits "${{ matrix.traits }}" --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests'
 
+  # End-to-end coverage for the hardened runtimes the Docker adapter prefers over `runc`.
+  # Each job installs one runtime on the runner's Docker daemon and then asserts that
+  # discovery finds it, selects it, and that containers really stop sharing the host kernel.
+  #
+  # gVisor needs no hardware support (its default `systrap` platform is pure userspace), so
+  # it runs as a required job on both architectures. Kata needs `/dev/kvm`.
+  runtime-e2e:
+    name: Runtime E2E (${{ matrix.runtime }}, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: runsc
+            os: ubuntu-24.04
+            arch: x64
+            required: true
+          - runtime: runsc
+            os: ubuntu-24.04-arm
+            arch: arm64
+            required: true
+          - runtime: kata
+            os: ubuntu-24.04
+            arch: x64
+            required: false
+
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ !matrix.required }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Swift
+        uses: ./.github/actions/setup-swift
+
+      - name: Cache SPM build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-runtime-e2e-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-runtime-e2e-${{ matrix.os }}-${{ matrix.arch }}-
+            spm-unit-${{ matrix.os }}-${{ matrix.arch }}-
+
+      # Kata boots a VM per container, so without KVM it either fails outright or silently
+      # falls back to QEMU's TCG interpreter, which is far too slow to test against.
+      - name: Probe KVM
+        id: kvm
+        if: matrix.runtime == 'kata'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          grep -c -E 'vmx|svm' /proc/cpuinfo || echo "no virtualization flags in /proc/cpuinfo"
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::/dev/kvm is usable on this runner"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::/dev/kvm is unavailable on this runner — skipping the Kata E2E"
+          fi
+
+      - name: Install gVisor
+        if: matrix.runtime == 'runsc'
+        run: |
+          set -euo pipefail
+          url="https://storage.googleapis.com/gvisor/releases/release/latest/$(uname -m)"
+          wget -q "${url}/runsc" "${url}/runsc.sha512" \
+                  "${url}/containerd-shim-runsc-v1" "${url}/containerd-shim-runsc-v1.sha512"
+          sha512sum -c runsc.sha512 -c containerd-shim-runsc-v1.sha512
+          sudo mv runsc containerd-shim-runsc-v1 /usr/local/bin/
+          sudo chmod a+rx /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1
+          # Registers a Docker runtime named `runsc` in /etc/docker/daemon.json.
+          sudo /usr/local/bin/runsc install
+          sudo systemctl restart docker
+
+      - name: Install Kata Containers
+        if: matrix.runtime == 'kata' && steps.kvm.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          # Release asset names have shifted across Kata 3.x (kata-static, kata-go-static,
+          # .tar.xz, .tar.zst), so pick whatever the latest release actually publishes.
+          asset=$(curl -fsSL https://api.github.com/repos/kata-containers/kata-containers/releases/latest \
+            | jq -r '.assets[].browser_download_url
+                     | select(test("kata(-go)?-static-.*(amd64|x86_64)\\.tar\\.(xz|zst)$"))' \
+            | head -n1)
+          test -n "$asset" || { echo "::error::no Kata static release asset found"; exit 1; }
+          echo "Installing $asset"
+          sudo apt-get update && sudo apt-get install -y zstd
+          curl -fsSL -o kata-static.tar "$asset"
+          sudo tar -xf kata-static.tar -C /
+          /opt/kata/bin/kata-runtime --version
+
+          # Register the shim as a Docker runtime, merging into any existing daemon.json.
+          sudo mkdir -p /etc/docker
+          [ -f /etc/docker/daemon.json ] || echo '{}' | sudo tee /etc/docker/daemon.json >/dev/null
+          jq '.runtimes.kata = {"runtimeType": "/opt/kata/bin/containerd-shim-kata-v2"}' \
+            /etc/docker/daemon.json | sudo tee /etc/docker/daemon.json.new >/dev/null
+          sudo mv /etc/docker/daemon.json.new /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Verify the runtime is registered with Docker
+        if: matrix.runtime != 'kata' || steps.kvm.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          docker info --format 'default={{.DefaultRuntime}} runtimes={{json .Runtimes}}'
+          docker info --format '{{json .Runtimes}}' | jq -e 'has("${{ matrix.runtime }}")'
+          docker run --rm --runtime '${{ matrix.runtime }}' alpine:latest uname -r
+
+      - name: Run runtime E2E tests
+        if: matrix.runtime != 'kata' || steps.kvm.outputs.available == 'true'
+        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentIsolationDockerRuntimeTests
+        env:
+          AGENTC_TEST_DOCKER_RUNTIME: ${{ matrix.runtime }}
+
   build-test-image:
     strategy:
       fail-fast: false

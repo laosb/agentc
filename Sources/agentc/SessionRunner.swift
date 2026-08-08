@@ -75,7 +75,8 @@ enum SessionRunner {
     )
 
     return try await dispatchToRuntime(
-      options: options, config: isolationConfig, entrypoint: entrypoint)
+      options: options, config: isolationConfig, entrypoint: entrypoint,
+      projectSettings: projectSettings)
   }
 
   // MARK: - Runtime dispatch
@@ -83,7 +84,8 @@ enum SessionRunner {
   private static func dispatchToRuntime(
     options: SharedOptions,
     config: IsolationConfig,
-    entrypoint: [String]?
+    entrypoint: [String]?,
+    projectSettings: ProjectSettings?
   ) async throws -> Int32 {
     let storagePath =
       FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -92,7 +94,13 @@ enum SessionRunner {
       .path
 
     let runtimeConfig = ContainerRuntimeConfiguration(
-      storagePath: storagePath, endpoint: options.dockerEndpoint)
+      storagePath: storagePath,
+      endpoint: options.dockerEndpoint,
+      ociRuntime: options.resolveDockerRuntime(projectSettings: projectSettings),
+      warningHandler: { message in
+        // stderr, so the warning never lands in output the agent's caller is parsing.
+        writeToStderr("\nagentc: \(message)\n\n")
+      })
 
     let choice = RuntimeChoice.resolve(explicit: options.runtime)
     return switch choice {

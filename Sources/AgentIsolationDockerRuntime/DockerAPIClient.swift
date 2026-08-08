@@ -92,6 +92,22 @@ final class DockerAPIClient: Sendable {
     }
   }
 
+  // MARK: - Daemon Info
+
+  /// Fetch `GET /info` to discover the runtimes registered with the daemon.
+  func info() async throws -> DockerInfo {
+    var request = makeRequest(url: buildURL(path: "/info"))
+    request.method = .GET
+
+    let response = try await httpClient.execute(request, timeout: .seconds(30))
+    let body = try await response.body.collect(upTo: 10 * 1024 * 1024)
+    guard response.status == .ok else {
+      throw DockerRuntimeError.apiError(
+        Int(response.status.code), "Failed to read daemon info: \(String(buffer: body))")
+    }
+    return try JSONDecoder().decode(DockerInfo.self, from: body)
+  }
+
   // MARK: - Image Operations
 
   func pullImage(ref: String, platform: String? = nil) async throws {

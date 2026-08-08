@@ -1,0 +1,23 @@
+# Written by Boite the first time it stored a boite in this project.
+# It won't be rewritten — edit freely.
+#
+# Tracked on purpose: boite.json (panels, layout, working directory) and
+# panels/*.sh (per-panel init scripts). Those are why a boite lives in
+# the repo — clone it, open it, get the same terminal.
+
+# Regenerated from Boite's types on every save, and replaced whenever the
+# schema version moves. It's here so editors can complete boite.json.
+boite.schema.json
+
+# Rolling snapshot of the last config Boite itself wrote, used to recover
+# from an outside edit that breaks boite.json. Local to this machine.
+.last-good/
+
+# Which pane you were last in, and when you last opened this boite.
+# Yours, not the project's — a fresh clone correctly has none.
+state.json
+
+.DS_Store
+
+# Already committed one of the above? Boite won't touch your index:
+#   git rm -r --cached .boite && git add .boite
