@@ -12,6 +12,11 @@ Supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [GitHub 
 
 **macOS / Linux (Docker runtime):** x64 or arm64, Docker Engine API v1.44+ (Docker, Podman with Docker compatibility, etc.).
 
+> [!IMPORTANT]
+> Standard Docker containers share the host kernel. Because agents run untrusted code,
+> `agentc` automatically prefers Kata Containers or gVisor when available and warns when
+> only standard `runc` isolation is available. See [*Safer Docker Isolation*](./docs/docker-runtimes.md).
+
 ### Install
 
 ```sh
@@ -78,12 +83,12 @@ To skip the bootstrap and use the image's own entrypoint:
 agentc run --respect-image-entrypoint -i my-image:latest
 ```
 
-### Container Isolation (Docker runtime)
+### Docker Isolation
 
 Agents run code you did not write, so on the Docker backend `agentc` asks the daemon which
 runtimes it has and prefers the strongest isolation available: **Kata Containers** (a VM per
 container) over **gVisor** (`runsc`) over **`runc`** (shares the host kernel). If only `runc`
-is available, `agentc` uses it and prints a one-time warning with setup instructions.
+is available, `agentc` uses it and prints a warning with setup instructions.
 
 Pick one yourself — including `runc`, which also silences the warning:
 
@@ -92,8 +97,8 @@ agentc run --docker-runtime runsc
 agentc run --docker-runtime runc     # "I know, runc is fine here"
 ```
 
-See [docs/docker-runtimes.md](./docs/docker-runtimes.md). The Apple Container runtime
-already gives every container its own VM, so this does not apply on macOS.
+See [Safer Docker Isolation](./docs/docker-runtimes.md). The Apple Container backend already
+gives every container its own VM, so runtime selection applies only to the Docker backend.
 
 ## Architecture
 
