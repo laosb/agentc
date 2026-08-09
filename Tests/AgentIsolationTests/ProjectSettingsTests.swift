@@ -254,7 +254,7 @@ struct ProjectSettingsSearchTests {
     defer { try? FileManager.default.removeItem(at: base) }
 
     // No .agentc or .boite folder
-    let settings = ProjectSettings.find(from: base)
+    _ = ProjectSettings.find(from: base)
     // We can't guarantee nil here since a parent dir might have one,
     // but we can test with a deep unique path
     let deep = base.appendingPathComponent("a/b/c/d/e")

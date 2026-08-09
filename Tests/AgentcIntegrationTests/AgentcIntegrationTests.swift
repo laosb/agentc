@@ -139,7 +139,7 @@ struct AgentcIntegrationTests {
     // Look like a freshly pulled clone so ensureRepo neither clones nor pulls.
     try fm.createDirectory(
       at: configsDir.appendingPathComponent(".git"), withIntermediateDirectories: true)
-    fm.createFile(
+    _ = fm.createFile(
       atPath: configsDir.appendingPathComponent(".agentc-last-pull").path, contents: nil)
 
     let result = await runAgentc(

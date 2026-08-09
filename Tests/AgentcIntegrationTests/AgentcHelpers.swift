@@ -51,7 +51,8 @@ func runAgentc(
     case .exited(let code): exitCode = code
     case .signaled(let sig): exitCode = sig
     }
-    return ProcessOutput(exitCode: exitCode, stdout: result.standardOutput ?? "", stderr: result.standardError ?? "")
+    return ProcessOutput(
+      exitCode: exitCode, stdout: result.standardOutput ?? "", stderr: result.standardError ?? "")
   } catch {
     return ProcessOutput(exitCode: -1, stdout: "", stderr: "launch error: \(error)")
   }
@@ -133,7 +134,7 @@ let sharedConfigurationsDir: String = {
   }
 
   // Touch the pull-marker so ensureRepo doesn't try to pull (there's no remote).
-  FileManager.default.createFile(
+  _ = FileManager.default.createFile(
     atPath: dir.appendingPathComponent(".agentc-last-pull").path, contents: nil)
 
   return dir.path
