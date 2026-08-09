@@ -12,7 +12,9 @@
 
   /// Container runtime that runs containers directly using Apple's Virtualization.framework
   /// via the `containerization` package — no XPC daemon required.
-  public final class AppleContainerRuntime: ContainerRuntime, @unchecked Sendable {
+  public final class AppleContainerRuntime: ContainerRuntime, ManagedImageRuntime,
+    @unchecked Sendable
+  {
     public typealias Image = AppleContainerImage
     public typealias Container = AppleContainerContainer
 
@@ -37,9 +39,7 @@
 
       let kernel = try await getOrDownloadKernel()
 
-      let imageStoreRoot = storagePath.appendingPathComponent("imagestore")
-      let store = try ImageStore(path: imageStoreRoot)
-      self.imageStore = store
+      let store = try managedImageStore()
 
       let network: Network?
       if #available(macOS 26.0, *) {
@@ -99,6 +99,85 @@
         throw AppleContainerRuntimeError.notPrepared
       }
       try await store.delete(reference: digest, performCleanup: true)
+    }
+
+    // MARK: - ManagedImageRuntime
+
+    public func listImages() async throws -> [ManagedImage] {
+      let store = try managedImageStore()
+      var result: [ManagedImage] = []
+      for image in try await store.list() {
+        result.append(try await managedImage(from: image))
+      }
+      return result.sorted { $0.reference < $1.reference }
+    }
+
+    public func inspectManagedImage(ref: String) async throws -> ManagedImage? {
+      let store = try managedImageStore()
+      let candidates = [ref, Self.normalizedDockerHubRef(ref)]
+      var visited: Set<String> = []
+      for candidate in candidates where visited.insert(candidate).inserted {
+        if let image = try? await store.get(reference: candidate) {
+          return try await managedImage(from: image)
+        }
+      }
+      return nil
+    }
+
+    public func removeManagedImage(ref: String) async throws {
+      let store = try managedImageStore()
+      let candidate: String
+      if (try? await store.get(reference: ref)) != nil {
+        candidate = ref
+      } else {
+        candidate = Self.normalizedDockerHubRef(ref)
+      }
+      try await store.delete(reference: candidate, performCleanup: true)
+    }
+
+    private func managedImageStore() throws -> ImageStore {
+      if let imageStore { return imageStore }
+      try FileManager.default.createDirectory(at: storagePath, withIntermediateDirectories: true)
+      let store = try ImageStore(path: storagePath.appendingPathComponent("imagestore"))
+      imageStore = store
+      return store
+    }
+
+    private func managedImage(from image: Containerization.Image) async throws -> ManagedImage {
+      let index = try await image.index()
+      var sizesByDigest: [String: Int64] = [image.descriptor.digest: image.descriptor.size]
+      for descriptor in index.manifests {
+        sizesByDigest[descriptor.digest] = descriptor.size
+        if let manifest = try? await image.manifest(for: descriptor.platform ?? .current) {
+          for child in manifest.layers + [manifest.config] {
+            sizesByDigest[child.digest] = child.size
+          }
+        }
+      }
+      let (name, tag) = Self.splitImageReference(image.reference)
+      let usage = sizesByDigest.values.reduce(UInt64(0)) { total, size in
+        total + UInt64(max(0, size))
+      }
+      let platforms = index.manifests.compactMap(\.platform).map(\.description)
+      return ManagedImage(
+        name: name,
+        tag: tag,
+        storageUsage: usage,
+        digest: image.digest,
+        mediaType: image.mediaType,
+        platforms: platforms.isEmpty ? nil : platforms
+      )
+    }
+
+    static func splitImageReference(_ reference: String) -> (name: String, tag: String) {
+      if let digest = reference.lastIndex(of: "@") {
+        return (String(reference[..<digest]), String(reference[reference.index(after: digest)...]))
+      }
+      let lastSlash = reference.lastIndex(of: "/")
+      if let colon = reference.lastIndex(of: ":"), lastSlash == nil || colon > lastSlash! {
+        return (String(reference[..<colon]), String(reference[reference.index(after: colon)...]))
+      }
+      return (reference, "latest")
     }
 
     public func runContainer(

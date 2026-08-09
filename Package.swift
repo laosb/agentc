@@ -119,6 +119,13 @@ let package = Package(
     .testTarget(
       name: "AgentcIntegrationTests",
       dependencies: [
+        "AgentIsolation",
+        .target(
+          name: "AgentIsolationAppleContainerRuntime",
+          condition: .when(traits: ["ContainerRuntimeAppleContainer"])),
+        .product(
+          name: "Containerization", package: "containerization",
+          condition: .when(platforms: [.macOS])),
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "Subprocess", package: "swift-subprocess"),
         .product(

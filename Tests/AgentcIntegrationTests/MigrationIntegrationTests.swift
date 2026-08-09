@@ -109,7 +109,7 @@ struct MigrationIntegrationTests {
 
     // Create old marker file
     let oldMarker = fakeHome.appendingPathComponent(".claudec/configurations/.claudec-last-pull")
-    fm.createFile(atPath: oldMarker.path, contents: nil)
+    _ = fm.createFile(atPath: oldMarker.path, contents: nil)
 
     let result = await runAgentc(
       args: ["migrate-from-claudec"],

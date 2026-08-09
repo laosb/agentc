@@ -1,3 +1,5 @@
+import Subprocess
+
 #if canImport(FoundationEssentials)
   import FoundationEssentials
 #else
@@ -15,8 +17,6 @@
 #else
   import SystemPackage
 #endif
-
-import Subprocess
 
 /// Manages the agent-isolation-configurations git repository (clone / pull).
 enum ConfigurationsManager {
@@ -101,6 +101,8 @@ enum AgentcError: LocalizedError {
   case bootstrapNotFound(String)
   case bootstrapDownloadFailed(String)
   case runtimeNotAvailable(String)
+  case imageManagementNotSupported(String)
+  case imageNotFound(String)
 
   var errorDescription: String? {
     switch self {
@@ -112,6 +114,10 @@ enum AgentcError: LocalizedError {
       return "agentc: \(message)"
     case .runtimeNotAvailable(let runtime):
       return "agentc: runtime '\(runtime)' is not available in this build"
+    case .imageManagementNotSupported(let runtime):
+      return "agentc: runtime '\(runtime)' does not support image management"
+    case .imageNotFound(let reference):
+      return "agentc: image '\(reference)' was not found"
     }
   }
 }
