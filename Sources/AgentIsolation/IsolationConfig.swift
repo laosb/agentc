@@ -33,7 +33,7 @@ public struct IsolationConfig: Sendable {
   public var profileHomeDir: URL
 
   /// Host workspace directory to mount inside the container.
-  /// Mounted at /workspace/<folderName>-<last10 of sha256(canonicalPath)>.
+  /// Its destination is controlled by ``mountPathScheme``.
   public var workspace: URL
 
   /// Controls how destinations are chosen for the workspace and additional host mounts.

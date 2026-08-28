@@ -11,6 +11,7 @@ Create `.agentc/settings.json` in your project root:
   "agent": {
     "image": "my-org/dev-image:latest",
     "configurations": ["claude"],
+    "mountPathScheme": "workspace",
     "cpus": 4,
     "memoryMiB": 4096,
     "excludes": ["node_modules", ".git"]
@@ -41,6 +42,7 @@ All fields are optional. Only the values you specify take effect.
   "agent": {
     "image": "<string>",
     "profile": "<string>",
+    "mountPathScheme": "workspace | host",
     "excludes": ["<string>", ...],
     "configurations": ["<string>", ...],
     "additionalMounts": ["<string>", ...],
@@ -66,6 +68,7 @@ All fields are optional. Only the values you specify take effect.
 |---|---|---|
 | `agent.image` | `--image`, `-i` | Default container image reference. |
 | `agent.profile` | `--profile`, `-p` | Default profile name. |
+| `agent.mountPathScheme` | `--mount-path-scheme` | Destination scheme for the workspace and host-backed additional mounts. Defaults to `workspace`. |
 | `agent.excludes` | `--exclude` | Workspace sub-folders to mask with empty overlays. |
 | `agent.configurations` | `--configurations`, `-c` | Agent configuration names to activate. |
 | `agent.additionalMounts` | `--additional-mount` | Additional host directories to mount. |
@@ -84,7 +87,7 @@ When both CLI flags and project settings specify a value, the behavior depends o
 
 **Override** (CLI wins, project settings used as fallback):
 
-- `image`, `profile`, `configurations`, `cpus`, `memoryMiB`, `bootstrap`, `respectImageEntrypoint`, `docker.runtime`
+- `image`, `profile`, `mountPathScheme`, `configurations`, `cpus`, `memoryMiB`, `bootstrap`, `respectImageEntrypoint`, `docker.runtime`
 
 **Merge** (both sets are combined):
 
@@ -105,6 +108,59 @@ For fields with override behavior, the full priority chain is:
 2. Project settings (`settings.json`)
 3. Profile settings (`~/.agentc/profiles/<name>/settings.json`) — only for `configurations`
 4. Built-in default (lowest priority)
+
+## Mount Path Schemes
+
+`workspace` is the default and preserves the existing isolated layout. Agentc
+canonicalizes the host path and mounts it at a stable hashed destination:
+
+```text
+host:      /Users/me/project
+container: /workspace/project-<hash>
+```
+
+`host` preserves the standardized absolute path as the container destination:
+
+```text
+host:      /Users/me/project
+container: /Users/me/project
+```
+
+The bind source may still resolve symlinks while the destination does not. On macOS,
+for example, requesting `/tmp/project` can bind from `/private/tmp/project` while the
+container continues to see `/tmp/project`.
+
+The selected scheme applies consistently to:
+
+- the workspace mount and container working directory;
+- workspace exclude overlays;
+- CLI `--additional-mount` values;
+- project `agent.additionalMounts` values.
+
+It does not alter configuration-repository `additionalMounts`; those are container
+paths backed by profile storage. Nor does host mode expose arbitrary host paths that
+were not mounted. Host executables, sockets, and files remain outside the container
+namespace unless they are part of one of the mounted resources.
+
+For safety, host mode rejects `/` and exact collisions with agentc-owned mount points:
+`/home/agent`, `/agent-isolation/agents`, `/agent-isolation/toolkit`, and
+`/entrypoint-bootstrap`.
+
+CLI selection overrides the project setting:
+
+```sh
+agentc run --mount-path-scheme host
+```
+
+Or set the project default:
+
+```json
+{
+  "agent": {
+    "mountPathScheme": "host"
+  }
+}
+```
 
 ## Examples
 
