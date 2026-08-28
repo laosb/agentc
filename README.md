@@ -2,7 +2,7 @@
 
 Run AI coding agents in isolated containers with persistent profiles and per-project memory isolation.
 
-Supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [GitHub Copilot CLI](https://gh.io/copilot-install), and more — with pluggable agent configurations via the [agent-isolation-configurations](https://github.com/laosb/agent-isolation-configurations) repo. Contributions for additional agents are welcome!
+Supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [ChatGPT Codex CLI](https://learn.chatgpt.com/docs/codex/cli), and more — with pluggable agent configurations via the [agent-isolation-configurations](https://github.com/laosb/agent-isolation-configurations) repo. Contributions for additional agents are welcome!
 
 ## Install
 
@@ -27,12 +27,11 @@ curl -fsSL https://raw.githubusercontent.com/laosb/agentc/main/install.sh | sh
 
 ```sh
 agentc run                          # start default agent (claude) in $PWD
-agentc run -c claude,copilot        # activate multiple configurations
+agentc run -c codex                 # use a different agent configuration
 agentc run "explain this code"      # forward args to the agent entrypoint
 agentc run -e TZ=Europe/Berlin      # set a container environment variable
 agentc sh                           # open a shell in the container
 agentc sh -- ls -la /home/agent     # run a command inside the container
-agentc version                      # print version info
 ```
 
 Use `agentc --help` and `agentc <subcommand> --help` for full CLI reference.
@@ -63,15 +62,11 @@ agentc run -c copilot
 ### Toolkit
 
 Every session mounts the **agentc Toolkit** read-only at `/agent-isolation/toolkit`: a
-small set of static binaries — `curl`, `jq`, `ripgrep` — and a CA bundle. It exists so a
-container is never entirely without tools; an image carrying nothing but a shell still has
-a `curl` for a configuration's `prepare.sh` to install with.
+small set of static binaries — `curl`, `jq`, `ripgrep` — and a CA bundle. It exists so
+agents always have some basic tools to work with even in `alpine`-like slim images.
 
-The toolkit's `bin` sits at the **end** of `PATH`, so it only ever fills gaps: an image
-that ships its own `curl` keeps using it, and so does anything a configuration puts in
-`additionalBinPaths`. Its CA bundle is used the same way — `CURL_CA_BUNDLE`,
-`SSL_CERT_FILE` and `GIT_SSL_CAINFO` are pointed at it only on an image that ships no
-trust store of its own, which is otherwise a container where every HTTPS request fails.
+The toolkit is designed in such a way that they would not override what the image itself
+provides.
 
 ```sh
 agentc run --no-toolkit                 # only what the image itself provides
@@ -80,14 +75,7 @@ agentc run --toolkit ~/my-toolkit       # a locally built bundle
 
 The toolkit is versioned independently of agentc and downloaded once, to
 `~/.agentc/toolkit/v<N>`. Its contents are defined by
-[`scripts/toolkit/manifest.sh`](./scripts/toolkit/manifest.sh) — every entry pinned to an
-HTTPS URL and a SHA-256 — and CI publishes a new bundle only when that file changes, so
-upgrading agentc does not re-download a toolkit that did not move. To add a tool, add a row,
-bump `TOOLKIT_VERSION` and `ToolkitManager.version` together, and build it locally first:
-
-```sh
-./scripts/toolkit/build-toolkit.sh --output dist
-```
+[`scripts/toolkit/manifest.sh`](./scripts/toolkit/manifest.sh).
 
 ### Project Settings
 
@@ -175,20 +163,6 @@ cp .build/<sdk>/release/agentc-bootstrap ~/.agentc/bin/bootstrap
 ```
 
 For released versions, `agentc` automatically downloads the matching bootstrap binary on first run. During development, you can also use `--bootstrap <path>` to specify a custom bootstrap binary or shell script, or `--respect-image-entrypoint` to skip the bootstrap entirely.
-
-## Migrating from claudec
-
-The `claudec` CLI was removed in v1.0.0-alpha.8. To migrate your profiles and configurations:
-
-```sh
-agentc migrate-from-claudec
-```
-
-If you have scripts or muscle memory that use the `claudec` command, you can set up a shell alias:
-
-```sh
-alias claudec='agentc run --'
-```
 
 ## License
 
