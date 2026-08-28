@@ -32,6 +32,11 @@
       var path = Helpers.envVar("PATH") ?? "/usr/bin:/bin"
       path = "\(home)/.local/bin:\(path)"
 
+      // The toolkit goes last, and everything after this point prepends, so it
+      // stays last: its tools are only reached for names nothing else provides.
+      Toolkit.appendToPath(&path)
+      Toolkit.exportCABundleIfImageHasNone()
+
       var lastEntrypoint: [String]?
 
       for configName in configurations {
