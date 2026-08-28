@@ -2,98 +2,126 @@
 
 Run AI coding agents in isolated containers with persistent profiles and per-project memory isolation.
 
-Supports [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [ChatGPT Codex CLI](https://learn.chatgpt.com/docs/codex/cli), and more — with pluggable agent configurations via the [agent-isolation-configurations](https://github.com/laosb/agent-isolation-configurations) repo. Contributions for additional agents are welcome!
+`agentc` works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenAI Codex CLI](https://learn.chatgpt.com/docs/codex/cli), [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli), and other agents through pluggable configurations from [agent-isolation-configurations](https://github.com/laosb/agent-isolation-configurations).
+
+## Highlights
+
+- **Isolated execution** — use Apple Containerization on macOS or a Docker-compatible runtime on macOS/Linux. On Docker, agentc prefers Kata Containers or gVisor over `runc` when available.
+- **Persistent profiles** — keep agent authentication, settings, MCP servers, and memory across sessions without mixing every project into one workspace.
+- **Pluggable agents** — switch or combine agent configurations without rebuilding agentc.
+- **Bring your own image** — run on normal or minimal container images; the bootstrap and Toolkit provide the basics needed to get started.
+- **Project-aware defaults** — store agent, resource, environment, mount, and image settings in `.agentc/settings.json`.
 
 ## Install
 
 ### Prerequisites
 
-**macOS (Apple Container runtime):** macOS 15+, Apple Silicon or Intel.
+**macOS with Apple Containerization:** macOS 15+, Apple Silicon or Intel.
 
-**macOS / Linux (Docker runtime):** x64 or arm64, Docker Engine API v1.44+ (Docker, Podman with Docker compatibility, etc.).
+**macOS / Linux with Docker:** x64 or arm64, with a Docker Engine API v1.44+ compatible daemon such as Docker or Podman in Docker-compatible mode.
 
 > [!IMPORTANT]
-> Standard Docker containers share the host kernel. Because agents run untrusted code,
-> `agentc` automatically prefers Kata Containers or gVisor when available and warns when
-> only standard `runc` isolation is available. See [*Safer Docker Isolation*](./docs/docker-runtimes.md).
+> Standard Docker containers share the host kernel. Because coding agents run code you did not write, agentc automatically prefers Kata Containers or gVisor when available and warns when only standard `runc` isolation is available. See [Safer Docker Isolation](./docs/docker-runtimes.md).
 
-### Install
+Install the latest release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/laosb/agentc/main/install.sh | sh
 ```
 
-## Quick Start
+## Quick start
+
+Run the default agent, Claude Code, in the current directory:
 
 ```sh
-agentc run                          # start default agent (claude) in $PWD
-agentc run -c codex                 # use a different agent configuration
-agentc run "explain this code"      # forward args to the agent entrypoint
-agentc run -e TZ=Europe/Berlin      # set a container environment variable
-agentc sh                           # open a shell in the container
-agentc sh -- ls -la /home/agent     # run a command inside the container
+agentc run
 ```
 
-Use `agentc --help` and `agentc <subcommand> --help` for full CLI reference.
-
-### Profiles
-
-A profile contains a persistent `/home/agent` directory that survives container restarts — keeping agent auth, memory, settings, and MCP servers.
+Choose another agent configuration or forward arguments to the agent:
 
 ```sh
-agentc run -p work                  # use a named profile
-agentc run --profile-dir ~/my-prof  # use a custom directory
-```
-
-Profiles are stored at `~/.agentc/profiles/<name>/`.
-
-### Configurations
-
-Agent configurations are modular setup recipes. Each configuration provides a `prepare.sh` script and optional additional settings. A configuration may declare `dependsOn` to pull in other configurations, which are always activated before it. The last activated configuration that defines an entrypoint provides the command to run.
-
-```sh
-# makes sure both Claude Code + GitHub Copilot CLI installed, but invokes GitHub Copilot CLI
-agentc run -c claude,copilot
-
-# just GitHub Copilot CLI
+agentc run -c codex
 agentc run -c copilot
+agentc run -c claude -- --model opus
+agentc run -- "explain this code"
 ```
 
-### Toolkit
-
-Every session mounts the **agentc Toolkit** read-only at `/agent-isolation/toolkit`: a
-small set of static binaries — `curl`, `jq`, `ripgrep` — and a CA bundle. It exists so
-agents always have some basic tools to work with even in `alpine`-like slim images.
-
-The toolkit is designed in such a way that they would not override what the image itself
-provides.
+Open a shell in the same kind of isolated environment:
 
 ```sh
-agentc run --no-toolkit                 # only what the image itself provides
-agentc run --toolkit ~/my-toolkit       # a locally built bundle
+agentc sh
+agentc sh -- ls -la /home/agent
 ```
 
-The toolkit is versioned independently of agentc and downloaded once, to
-`~/.agentc/toolkit/v<N>`. Its contents are defined by
-[`scripts/toolkit/manifest.sh`](./scripts/toolkit/manifest.sh).
+Use `agentc --help` and `agentc <subcommand> --help` for the full CLI reference.
 
-### Project Settings
+## Agent configurations
 
-Use `agentc init` to place a `.agentc/settings.json` file in your project root to set default agent options for the project. CLI flags override project settings; some fields (like `excludes` and `additionalMounts`) are merged. 
+Agent configurations are modular setup recipes. They install or prepare an agent and can depend on other configurations.
 
-See [docs/project-settings.md](./docs/project-settings.md) for the full schema and override rules.
+Pass a comma-separated list with `-c` / `--configurations`:
 
-### Mount Paths
-
-By default, host-backed paths use the `workspace` scheme. The workspace and every
-`--additional-mount` receive stable destinations beneath `/workspace`:
-
-```text
-/Users/me/project → /workspace/project-<hash>
+```sh
+# Prepare Claude Code and GitHub Copilot CLI, then launch Copilot.
+agentc run -c claude,copilot
 ```
 
-Use `--mount-path-scheme host` when a script or external protocol requires the same
-absolute path inside and outside the container:
+Configurations are activated in order; the last activated configuration that defines an entrypoint provides the command that runs. See [agent-isolation-configurations](https://github.com/laosb/agent-isolation-configurations) for the available configurations and their definitions.
+
+## Persistent profiles
+
+A profile keeps a persistent agent home directory across container restarts. Its `home` directory is mounted as `/home/agent`, so agent authentication, settings, memory, and MCP configuration survive between sessions.
+
+```sh
+agentc run -p work
+agentc run -p personal
+
+agentc profiles
+agentc profiles list work
+
+agentc run --profile-dir ~/my-agent-profile
+```
+
+Profiles are stored under `~/.agentc/profiles/<name>/`. You can also use a custom directory.
+
+## Project settings
+
+Initialize a project to create `.agentc/settings.json` and prepare its container environment:
+
+```sh
+agentc init
+```
+
+You can set useful defaults while initializing:
+
+```sh
+agentc init -c codex --cpus 4 --memory-mib 4096
+```
+
+CLI flags override project settings, while mergeable fields such as excludes and additional mounts are combined. See [Project Settings](./docs/project-settings.md) for the full schema and resolution rules.
+
+## Container images and Toolkit
+
+agentc can use any standard container image. By default, its bootstrap prepares the agent user and environment before launching the configured agent.
+
+```sh
+agentc run -i debian:latest
+agentc run -i alpine:latest
+agentc run -i buildpack-deps:scm
+agentc run -i my-custom-image:latest
+```
+
+By default, agentc mounts an **agentc Toolkit** into the container, which provides `curl`, `jq`, `ripgrep` in `$PATH`, if they are not supplied by the image. This allows you to use coding agents on virtually any kind of Docker images.
+
+## Workspaces and additional mounts
+
+By default, host-backed paths use the `workspace` mount scheme: the project workspace and additional mounts receive stable destinations under `/workspace`.
+
+```sh
+agentc run --additional-mount ~/shared
+```
+
+When an editor, protocol, or script requires the same absolute path inside and outside the container, use the `host` scheme:
 
 ```sh
 agentc run \
@@ -101,109 +129,23 @@ agentc run \
   --additional-mount /Users/me/shared
 ```
 
-In this mode, the workspace working directory remains `/Users/me/project`, and the
-additional mount remains `/Users/me/shared`. The bind source is still canonicalized,
-but the destination preserves the standardized caller-visible path without resolving
-symlinks. For example, a requested macOS path under `/tmp/project` remains
-`/tmp/project` in the container even when its bind source is `/private/tmp/project`.
+The project default can be set with `agent.mountPathScheme` in `.agentc/settings.json`; the CLI flag overrides it.
 
-Path preservation applies only to resources agentc mounts: the workspace,
-`--additional-mount`, and `agent.additionalMounts`. It does not expose arbitrary host
-executables, sockets, or files. Configuration-repository `additionalMounts` are
-profile-backed container paths and retain their existing semantics. Host mode rejects
-`/` and exact collisions with agentc-owned destinations such as `/home/agent`,
-`/agent-isolation/agents`, `/agent-isolation/toolkit`, and `/entrypoint-bootstrap`.
+## Scripted execution
 
-Set the project default with `agent.mountPathScheme`; the CLI flag overrides it. The
-default remains `workspace`.
+For `agentc run` and `agentc sh`, stdout belongs to the launched workload. agentc progress, setup output, warnings, and verbose diagnostics go to stderr, including configuration `prepare.sh` output.
 
-### Scripted Execution I/O
-
-For `agentc run` and `agentc sh`, stdout belongs to the launched workload. Agentc
-progress, setup output, warnings, and verbose diagnostics go to stderr, including
-output produced by configuration `prepare.sh` scripts. This makes non-interactive
-output safe to pipe or parse while preserving the existing automatic TTY behavior.
-
-### Container Images
-
-`agentc` works with any standard container image — it automatically sets up the agent user, sudo, and required tools at container start via an embedded bootstrap script. Images that ship no tooling of their own are covered by the [toolkit](#toolkit). The default image is pre-configured for faster startup, but you can use any base image:
+That makes non-interactive output safe to pipe or parse:
 
 ```sh
-agentc run -i debian:latest               # stock Debian
-agentc run -i alpine:latest               # Alpine Linux
-agentc run -i buildpack-deps:scm          # Debian + git, curl, etc.
-agentc run -i my-custom-image:latest      # your own image
+agentc run -- "summarize this project" > summary.txt
 ```
 
-To skip the bootstrap and use the image's own entrypoint:
-
-```sh
-agentc run --respect-image-entrypoint -i my-image:latest
-```
-
-### Docker Isolation
-
-Agents run code you did not write, so on the Docker backend `agentc` asks the daemon which
-runtimes it has and prefers the strongest isolation available: **Kata Containers** (a VM per
-container) over **gVisor** (`runsc`) over **`runc`** (shares the host kernel). If only `runc`
-is available, `agentc` uses it and prints a warning with setup instructions.
-
-Pick one yourself — including `runc`, which also silences the warning:
-
-```sh
-agentc run --docker-runtime runsc
-agentc run --docker-runtime runc     # "I know, runc is fine here"
-```
-
-See [Safer Docker Isolation](./docs/docker-runtimes.md). The Apple Container backend already
-gives every container its own VM, so runtime selection applies only to the Docker backend.
-
-## Architecture
-
-```
-agentc (CLI)
-  └─ AgentIsolation                          (runtime-agnostic orchestration)
-  └─ AgentIsolationAppleContainerRuntime     (Apple Containerization, macOS)
-  └─ AgentIsolationDockerRuntime             (Docker Engine API, macOS/Linux)
-agentc-bootstrap                             (In-container bootstrap program)
-```
-
-`AgentIsolation` depends only on Foundation and [swift-crypto](https://github.com/apple/swift-crypto). Runtime backends are conditionally compiled via Swift package traits.
-
-The `agentc-bootstrap` binary is a standalone statically-linked Linux executable that runs as the container entrypoint. It creates `agent` user and does the rest of agent initialization as needed.
-
-The agentc Toolkit is built separately from `scripts/toolkit/manifest.sh` and released on its own
-schedule; see [Toolkit](#toolkit).
+This allows you to use agentc to run stdio-based MCP or ACP. Automatic TTY behavior is preserved for interactive sessions.
 
 ## Development
 
-Swift 6.3+. Tested on Swift 6.3.3.
-
-```sh
-swift build                                    # debug build (default traits)
-swift build --traits ContainerRuntimeDocker    # Docker-only
-swift test --filter AgentIsolationTests        # unit tests
-./build.sh                                     # release build + codesign
-./build.sh --runtimes docker                   # Docker-only release
-```
-
-Set `BUILD_VERSION` and `BUILD_GIT_SHA` environment variables before `build.sh` to inject version info into the `agentc version` output.
-
-### Bootstrap binary
-
-The `agentc-bootstrap` binary is the container entrypoint. It must be built separately as a statically linked Linux binary:
-
-```sh
-# Build for the current architecture (requires Static Linux SDK)
-swift build --product agentc-bootstrap -c release --swift-sdk x86_64-swift-linux-musl   # x64
-swift build --product agentc-bootstrap -c release --swift-sdk aarch64-swift-linux-musl  # arm64
-
-# Install to the expected location
-mkdir -p ~/.agentc/bin
-cp .build/<sdk>/release/agentc-bootstrap ~/.agentc/bin/bootstrap
-```
-
-For released versions, `agentc` automatically downloads the matching bootstrap binary on first run. During development, you can also use `--bootstrap <path>` to specify a custom bootstrap binary or shell script, or `--respect-image-entrypoint` to skip the bootstrap entirely.
+Building agentc, running tests, creating static Linux binaries, and building `agentc-bootstrap` are documented in [BUILD.md](./BUILD.md).
 
 ## License
 
