@@ -6,7 +6,7 @@ import AgentIsolation
   import Foundation
 #endif
 
-#if ContainerRuntimeAppleContainer
+#if os(macOS) && ContainerRuntimeAppleContainer
   import AgentIsolationAppleContainerRuntime
 #endif
 #if ContainerRuntimeDocker
@@ -118,7 +118,7 @@ enum SessionRunner {
         throw AgentcError.runtimeNotAvailable("docker")
       #endif
     case .appleContainer:
-      #if ContainerRuntimeAppleContainer
+      #if os(macOS) && ContainerRuntimeAppleContainer
         try await executeSession(
           runtime: AppleContainerRuntime(config: runtimeConfig),
           config: config,

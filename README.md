@@ -177,7 +177,7 @@ schedule; see [Toolkit](#toolkit).
 
 ## Development
 
-Swift 6.1+. Tested on Swift 6.3.
+Swift 6.3+. Tested on Swift 6.3.3.
 
 ```sh
 swift build                                    # debug build (default traits)

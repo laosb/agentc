@@ -90,7 +90,7 @@ enum ConfigurationsManager {
       error: .discarded
     )
     // Update marker regardless of pull success (avoid repeated failures)
-    FileManager.default.createFile(atPath: markerFile.path, contents: nil)
+    _ = FileManager.default.createFile(atPath: markerFile.path, contents: nil)
   }
 }
 
