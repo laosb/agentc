@@ -27,6 +27,8 @@ struct EnvironmentVariableOption: ExpressibleByArgument, Sendable, Equatable {
   }
 }
 
+extension MountPathScheme: ExpressibleByArgument {}
+
 struct SharedOptions: ParsableArguments {
   @Option(name: .shortAndLong, help: "Container runtime.")
   var runtime: RuntimeChoice?
@@ -54,6 +56,12 @@ struct SharedOptions: ParsableArguments {
 
   @Option(name: .shortAndLong, help: "Host directory to mount as the workspace.")
   var workspace: String?
+
+  @Option(
+    name: .customLong("mount-path-scheme"),
+    help: "Container destination scheme for host mounts (workspace or host)."
+  )
+  var mountPathScheme: MountPathScheme?
 
   @Option(
     name: .customLong("exclude"),
@@ -188,6 +196,11 @@ extension SharedOptions {
       return URL(fileURLWithPath: ws)
     }
     return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+  }
+
+  /// Resolve host-backed mount destinations. CLI flag → project settings → workspace.
+  func resolveMountPathScheme(projectSettings: ProjectSettings? = nil) -> MountPathScheme {
+    mountPathScheme ?? projectSettings?.agent?.mountPathScheme ?? .workspace
   }
 
   /// Resolve excluded folders list.

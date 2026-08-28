@@ -36,6 +36,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
   public struct AgentSettings: Codable, Sendable, Equatable {
     public var image: String?
     public var profile: String?
+    public var mountPathScheme: MountPathScheme?
     public var excludes: [String]?
     public var configurations: [String]?
     public var additionalMounts: [String]?
@@ -50,6 +51,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     public init(
       image: String? = nil,
       profile: String? = nil,
+      mountPathScheme: MountPathScheme? = nil,
       excludes: [String]? = nil,
       configurations: [String]? = nil,
       additionalMounts: [String]? = nil,
@@ -63,6 +65,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     ) {
       self.image = image
       self.profile = profile
+      self.mountPathScheme = mountPathScheme
       self.excludes = excludes
       self.configurations = configurations
       self.additionalMounts = additionalMounts
