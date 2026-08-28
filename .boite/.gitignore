@@ -1,3 +1,28 @@
+# >>> boite managed >>>
+# Boite keeps this block up to date. Write your own rules BELOW it —
+# git uses the last matching pattern, so yours win. To stop Boite
+# touching this file at all, put `# boite: unmanaged` anywhere in it.
+
+# Regenerated from Boite's types, one beside each file they describe —
+# boite.json here, screen.json in every screen, and the panels' one in
+# every panels/ directory. Ignored everywhere, INCLUDING inside shared/:
+# a generated file in somebody's repository is a diff nobody wrote.
+*.schema.json
+
+# Rolling snapshot of the last config Boite itself wrote, for recovering
+# from an outside edit that breaks boite.json. Local to this machine.
+.last-good/**
+
+# Which pane you were last in, and which screen you are showing.
+state.json
+
+# Your screens. Sharing one moves it into shared/, which IS tracked —
+# that move is the whole of "share".
+screens/**
+
+.DS_Store
+# <<< boite managed <<<
+
 # Written by Boite the first time it stored a boite in this project.
 # It won't be rewritten — edit freely.
 #

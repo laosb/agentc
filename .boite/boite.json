@@ -1,0 +1,13 @@
+{
+  "$schema" : "./boite.schema.json",
+  "schemaVersion" : 23,
+  "createdAt" : "2026-08-28T02:05:44Z",
+  "id" : "5D79B032-A706-4E5E-AE70-0F4A2B581E5B",
+  "name" : "agentc",
+  "children" : [
+
+  ],
+  "color" : "#89b4fa",
+  "icon" : "boite://prompt.underscore",
+  "workingDirectory" : "."
+}
