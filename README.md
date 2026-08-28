@@ -83,6 +83,47 @@ Use `agentc init` to place a `.agentc/settings.json` file in your project root t
 
 See [docs/project-settings.md](./docs/project-settings.md) for the full schema and override rules.
 
+### Mount Paths
+
+By default, host-backed paths use the `workspace` scheme. The workspace and every
+`--additional-mount` receive stable destinations beneath `/workspace`:
+
+```text
+/Users/me/project → /workspace/project-<hash>
+```
+
+Use `--mount-path-scheme host` when a script or external protocol requires the same
+absolute path inside and outside the container:
+
+```sh
+agentc run \
+  --mount-path-scheme host \
+  --additional-mount /Users/me/shared
+```
+
+In this mode, the workspace working directory remains `/Users/me/project`, and the
+additional mount remains `/Users/me/shared`. The bind source is still canonicalized,
+but the destination preserves the standardized caller-visible path without resolving
+symlinks. For example, a requested macOS path under `/tmp/project` remains
+`/tmp/project` in the container even when its bind source is `/private/tmp/project`.
+
+Path preservation applies only to resources agentc mounts: the workspace,
+`--additional-mount`, and `agent.additionalMounts`. It does not expose arbitrary host
+executables, sockets, or files. Configuration-repository `additionalMounts` are
+profile-backed container paths and retain their existing semantics. Host mode rejects
+`/` and exact collisions with agentc-owned destinations such as `/home/agent`,
+`/agent-isolation/agents`, `/agent-isolation/toolkit`, and `/entrypoint-bootstrap`.
+
+Set the project default with `agent.mountPathScheme`; the CLI flag overrides it. The
+default remains `workspace`.
+
+### Scripted Execution I/O
+
+For `agentc run` and `agentc sh`, stdout belongs to the launched workload. Agentc
+progress, setup output, warnings, and verbose diagnostics go to stderr, including
+output produced by configuration `prepare.sh` scripts. This makes non-interactive
+output safe to pipe or parse while preserving the existing automatic TTY behavior.
+
 ### Container Images
 
 `agentc` works with any standard container image — it automatically sets up the agent user, sudo, and required tools at container start via an embedded bootstrap script. Images that ship no tooling of their own are covered by the [toolkit](#toolkit). The default image is pre-configured for faster startup, but you can use any base image:
