@@ -32,6 +32,7 @@ struct InitCommandIntegrationTests {
     let agent = json["agent"] as! [String: Any]
     #expect(agent["image"] as? String == "ghcr.io/laosb/claudec:latest")
     #expect(agent["configurations"] as? [String] == ["claude"])
+    #expect(agent["mountPathScheme"] as? String == "workspace")
     #expect(agent["cpus"] as? Int == 1)
     #expect(agent["memoryMiB"] as? Int == 1536)
   }
@@ -51,6 +52,7 @@ struct InitCommandIntegrationTests {
         "--cpus", "4",
         "--memory-mib", "4096",
         "--image", "custom:latest",
+        "--mount-path-scheme", "host",
         "--configurations", "claude,copilot",
         "--exclude", "node_modules,.git",
         "--env", "TZ=America/Los_Angeles",
@@ -67,6 +69,7 @@ struct InitCommandIntegrationTests {
     #expect(agent["image"] as? String == "custom:latest")
     #expect(agent["cpus"] as? Int == 4)
     #expect(agent["memoryMiB"] as? Int == 4096)
+    #expect(agent["mountPathScheme"] as? String == "host")
     #expect(agent["configurations"] as? [String] == ["claude", "copilot"])
     #expect(agent["excludes"] as? [String] == ["node_modules", ".git"])
     let environment = agent["environment"] as? [String: String]
@@ -88,6 +91,26 @@ struct InitCommandIntegrationTests {
         base.path,
         "--skip-container-init",
         "--env", "MISSING_SEPARATOR",
+      ]
+    )
+
+    #expect(result.exitCode != 0)
+    #expect(!FileManager.default.fileExists(atPath: base.appendingPathComponent(".agentc").path))
+  }
+
+  @Test("agentc init rejects an invalid mount path scheme")
+  func initRejectsInvalidMountPathScheme() async throws {
+    let base = URL(
+      fileURLWithPath: "/tmp/__TEST_agentc_init_scheme.\(UUID().uuidString.prefix(6))")
+    try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let result = await runAgentc(
+      args: [
+        "init",
+        base.path,
+        "--skip-container-init",
+        "--mount-path-scheme", "elsewhere",
       ]
     )
 

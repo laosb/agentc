@@ -14,6 +14,7 @@ struct ProjectSettingsDecodingTests {
         "agent": {
           "image": "my-image:latest",
           "profile": "work",
+          "mountPathScheme": "host",
           "excludes": [".git", "node_modules"],
           "configurations": ["claude", "copilot"],
           "additionalMounts": ["/data/models"],
@@ -36,6 +37,7 @@ struct ProjectSettingsDecodingTests {
     let agent = try #require(settings.agent)
     #expect(agent.image == "my-image:latest")
     #expect(agent.profile == "work")
+    #expect(agent.mountPathScheme == .host)
     #expect(agent.excludes == [".git", "node_modules"])
     #expect(agent.configurations == ["claude", "copilot"])
     #expect(agent.additionalMounts == ["/data/models"])
@@ -94,6 +96,7 @@ struct ProjectSettingsDecodingTests {
     #expect(agent.image == "custom:v1")
     #expect(agent.cpus == 2)
     #expect(agent.profile == nil)
+    #expect(agent.mountPathScheme == nil)
     #expect(agent.excludes == nil)
     #expect(agent.configurations == nil)
     #expect(agent.additionalMounts == nil)
@@ -116,6 +119,17 @@ struct ProjectSettingsDecodingTests {
     let agent = try #require(settings.agent)
     #expect(agent.image == nil)
     #expect(agent.cpus == nil)
+  }
+
+  @Test("Rejects an invalid mount path scheme")
+  func rejectsInvalidMountPathScheme() throws {
+    let json = """
+      { "agent": { "mountPathScheme": "elsewhere" } }
+      """
+
+    #expect(throws: DecodingError.self) {
+      _ = try JSONDecoder().decode(ProjectSettings.self, from: Data(json.utf8))
+    }
   }
 }
 

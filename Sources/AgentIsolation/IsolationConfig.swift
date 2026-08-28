@@ -15,6 +15,15 @@ public enum BootstrapMode: Sendable {
   case imageDefault
 }
 
+/// Determines how host-backed mount destinations are represented in the container.
+public enum MountPathScheme: String, Codable, Sendable {
+  /// Mount host paths beneath `/workspace` using a stable, canonical-path identifier.
+  case workspace
+
+  /// Preserve the caller-visible absolute host path as the container destination.
+  case host
+}
+
 /// Configuration for running an isolated agent container session.
 public struct IsolationConfig: Sendable {
   /// Container image reference (e.g. "ghcr.io/laosb/claudec:latest").
@@ -26,6 +35,9 @@ public struct IsolationConfig: Sendable {
   /// Host workspace directory to mount inside the container.
   /// Mounted at /workspace/<folderName>-<last10 of sha256(canonicalPath)>.
   public var workspace: URL
+
+  /// Controls how destinations are chosen for the workspace and additional host mounts.
+  public var mountPathScheme: MountPathScheme
 
   /// Subfolder names within the workspace to mask with empty read-only mounts.
   /// Strips leading/trailing slashes. Multiple values allowed.
@@ -91,6 +103,7 @@ public struct IsolationConfig: Sendable {
     image: String,
     profileHomeDir: URL,
     workspace: URL,
+    mountPathScheme: MountPathScheme = .workspace,
     excludeFolders: [String] = [],
     configurationsDir: URL,
     configurations: [String] = ["claude"],
@@ -108,6 +121,7 @@ public struct IsolationConfig: Sendable {
     self.image = image
     self.profileHomeDir = profileHomeDir
     self.workspace = workspace
+    self.mountPathScheme = mountPathScheme
     self.excludeFolders = excludeFolders
     self.configurationsDir = configurationsDir
     self.configurations = configurations

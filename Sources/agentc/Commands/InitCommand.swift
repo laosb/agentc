@@ -121,6 +121,7 @@ struct InitCommand: AsyncParsableCommand {
       agent: .init(
         image: options.image ?? "ghcr.io/laosb/claudec:latest",
         profile: options.profile,
+        mountPathScheme: options.resolveMountPathScheme(),
         excludes: excludes,
         configurations: configurations,
         additionalMounts: options.additionalMount.isEmpty ? nil : options.additionalMount,

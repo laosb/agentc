@@ -62,6 +62,7 @@ enum SessionRunner {
       image: resolvedImage,
       profileHomeDir: profileHomeDir,
       workspace: workspace,
+      mountPathScheme: options.resolveMountPathScheme(projectSettings: projectSettings),
       excludeFolders: excludeFolders,
       configurationsDir: configurationsDir,
       configurations: configNames,
