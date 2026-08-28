@@ -37,7 +37,7 @@ jobs:
         uses: ./.github/actions/setup-swift
 
       - name: Cache SPM build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .build
           key: spm-unit-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
@@ -82,7 +82,7 @@ jobs:
         uses: ./.github/actions/setup-swift
 
       - name: Cache SPM build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .build
           key: spm-runtime-e2e-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
@@ -184,7 +184,7 @@ jobs:
         run: docker save ghcr.io/laosb/claudec:latest | gzip > claudec-image.tar.gz
 
       - name: Upload image artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: claudec-image-${{ matrix.arch }}
           path: claudec-image.tar.gz
@@ -214,7 +214,7 @@ jobs:
           static-sdk: "true"
 
       - name: Cache SPM build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .build
           key: spm-integration-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
@@ -222,7 +222,7 @@ jobs:
             spm-integration-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Download base image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: claudec-image-${{ matrix.arch }}
 
@@ -253,7 +253,7 @@ jobs:
           touch ~/.agentc/configurations/.agentc-last-pull
 
       - name: Cache shared test profiles
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.agentc/profiles/__TEST_agentc_shared
@@ -288,7 +288,7 @@ jobs:
           static-sdk: "true"
 
       - name: Cache SPM build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .build
           key: spm-static-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
@@ -296,7 +296,7 @@ jobs:
             spm-static-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Download base image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: claudec-image-${{ matrix.arch }}
 
@@ -331,7 +331,7 @@ jobs:
           touch ~/.agentc/configurations/.agentc-last-pull
 
       - name: Cache shared test profiles
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.agentc/profiles/__TEST_agentc_shared

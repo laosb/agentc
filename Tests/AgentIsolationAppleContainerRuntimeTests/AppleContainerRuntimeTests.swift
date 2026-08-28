@@ -67,7 +67,7 @@
 
     @Test("ghcr.io reference is unchanged")
     func ghcrReference() {
-      let ref = "ghcr.io/apple/containerization/vminit:0.29.0"
+      let ref = "ghcr.io/apple/containerization/vminit:0.41.0"
       let result = AppleContainerRuntime.normalizedDockerHubRef(ref)
       #expect(result == ref)
     }

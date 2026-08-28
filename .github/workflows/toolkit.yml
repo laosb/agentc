@@ -72,7 +72,7 @@ jobs:
             ./check/bin/curl -fsS -o /dev/null https://github.com/
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.manifest.outputs.tag }}
           name: agentc Toolkit v${{ steps.manifest.outputs.version }}

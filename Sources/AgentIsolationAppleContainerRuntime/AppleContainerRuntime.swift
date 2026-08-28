@@ -50,7 +50,7 @@
 
       self.manager = try await ContainerManager(
         kernel: kernel,
-        initfsReference: "ghcr.io/apple/containerization/vminit:0.29.0",
+        initfsReference: "ghcr.io/apple/containerization/vminit:0.41.0",
         imageStore: store,
         network: network
       )
@@ -317,40 +317,66 @@
     // MARK: - Kernel
 
     private func getOrDownloadKernel() async throws -> Kernel {
-      // 1. Try the container app's installed kernel
+      // 1. Reuse Apple Container's installed kernel when it is at least as new as
+      // Apple's current default. Older kernels are skipped and upgraded in our cache.
       let appKernelLink =
         Self.containerAppDataRoot
         .appendingPathComponent("kernels")
         .appendingPathComponent("default.kernel-arm64")
       let appKernelResolved = appKernelLink.resolvingSymlinksInPath()
-      if FileManager.default.fileExists(atPath: appKernelResolved.path) {
+      let appKernelExists = FileManager.default.fileExists(atPath: appKernelResolved.path)
+      if appKernelExists,
+        AppleContainerDefaultKernel.isCurrentOrNewer(
+          filename: appKernelResolved.lastPathComponent)
+      {
         return Kernel(path: appKernelResolved, platform: .linuxArm)
       }
 
-      // 2. Try our own cached kernel
+      // 2. Try our own current cached kernel. Using Apple's versioned filename makes
+      // an agentc update automatically bypass any older cached kernel.
       let ourKernelDir = storagePath.appendingPathComponent("kernels")
       let ourKernelLink = ourKernelDir.appendingPathComponent("default.kernel-arm64")
-      let ourKernelResolved = ourKernelLink.resolvingSymlinksInPath()
-      if FileManager.default.fileExists(atPath: ourKernelResolved.path) {
-        return Kernel(path: ourKernelResolved, platform: .linuxArm)
+      let kernelBinary = ourKernelDir.appendingPathComponent(AppleContainerDefaultKernel.filename)
+      if FileManager.default.fileExists(atPath: kernelBinary.path) {
+        try? FileManager.default.removeItem(at: ourKernelLink)
+        try FileManager.default.createSymbolicLink(
+          at: ourKernelLink, withDestinationURL: kernelBinary)
+        return Kernel(path: kernelBinary, platform: .linuxArm)
       }
 
-      // 3. Download kernel from kata-containers
-      fputs("agentc: downloading kernel (one-time setup)...\n", stderr)
-      let tarURL = URL(
-        string:
-          "https://github.com/kata-containers/kata-containers/releases/download/3.26.0/kata-static-3.26.0-arm64.tar.zst"
-      )!
-      let kernelPathInArchive = "opt/kata/share/kata-containers/vmlinux-6.18.5-177"
+      // 3. Download and verify Apple's current default kernel.
+      let existingCachedKernel = ourKernelLink.resolvingSymlinksInPath()
+      let isUpgrade =
+        appKernelExists
+        || FileManager.default.fileExists(atPath: existingCachedKernel.path)
+      let action = isUpgrade ? "upgrading to" : "installing"
+      fputs(
+        "agentc: \(action) Apple Containers default kernel "
+          + "(Kata \(AppleContainerDefaultKernel.kataVersion))...\n",
+        stderr)
+      let tarURL = URL(string: AppleContainerDefaultKernel.archiveURL)!
 
-      let (tempFile, _) = try await URLSession.shared.download(from: tarURL)
+      let (tempFile, response) = try await URLSession.shared.download(from: tarURL)
       defer { try? FileManager.default.removeItem(at: tempFile) }
+      guard let response = response as? HTTPURLResponse,
+        (200..<300).contains(response.statusCode)
+      else {
+        throw AppleContainerRuntimeError.kernelDownloadFailed(
+          statusCode: (response as? HTTPURLResponse)?.statusCode)
+      }
+
+      let actualDigest = try AppleContainerDefaultKernel.sha256Digest(of: tempFile)
+      guard actualDigest == AppleContainerDefaultKernel.archiveDigest else {
+        throw AppleContainerRuntimeError.unexpectedKernelArchiveDigest(
+          expected: AppleContainerDefaultKernel.archiveDigest,
+          actual: actualDigest)
+      }
 
       let archiveReader = try ArchiveReader(file: tempFile)
-      let (_, kernelData) = try archiveReader.extractFile(path: kernelPathInArchive)
+      let (_, kernelData) =
+        try archiveReader.extractFile(path: AppleContainerDefaultKernel.binaryPath)
 
       try FileManager.default.createDirectory(at: ourKernelDir, withIntermediateDirectories: true)
-      let kernelBinary = ourKernelDir.appendingPathComponent("vmlinux-6.18.5-177")
       try kernelData.write(to: kernelBinary, options: .atomic)
 
       try? FileManager.default.removeItem(at: ourKernelLink)
@@ -435,11 +461,21 @@
 
   public enum AppleContainerRuntimeError: LocalizedError {
     case notPrepared
+    case kernelDownloadFailed(statusCode: Int?)
+    case unexpectedKernelArchiveDigest(expected: String, actual: String)
 
     public var errorDescription: String? {
       switch self {
       case .notPrepared:
         return "Container runtime has not been prepared. Call prepare() first."
+      case .kernelDownloadFailed(let statusCode):
+        if let statusCode {
+          return "Failed to download the Apple Containers kernel (HTTP \(statusCode))."
+        }
+        return "Failed to download the Apple Containers kernel: invalid HTTP response."
+      case .unexpectedKernelArchiveDigest(let expected, let actual):
+        return
+          "Apple Containers kernel archive digest mismatch: expected \(expected), got \(actual)."
       }
     }
   }

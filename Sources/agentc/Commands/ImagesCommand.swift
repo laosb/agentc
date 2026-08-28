@@ -1,7 +1,7 @@
 import AgentIsolation
 import ArgumentParser
 
-#if ContainerRuntimeAppleContainer
+#if os(macOS) && ContainerRuntimeAppleContainer
   import AgentIsolationAppleContainerRuntime
 #endif
 #if ContainerRuntimeDocker
@@ -46,7 +46,7 @@ struct ImageRuntimeOptions: ParsableArguments {
 
     switch RuntimeChoice.resolve(explicit: runtime) {
     case .appleContainer:
-      #if ContainerRuntimeAppleContainer
+      #if os(macOS) && ContainerRuntimeAppleContainer
         return try await operation(AppleContainerRuntime(config: config))
       #else
         throw AgentcError.runtimeNotAvailable("apple-container")

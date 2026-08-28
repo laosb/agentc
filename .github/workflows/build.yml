@@ -67,7 +67,7 @@ jobs:
           tar czf "agentc-${{ matrix.variant }}.tar.gz" agentc
 
       - name: Upload agentc artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentc-${{ matrix.variant }}
           path: agentc-${{ matrix.variant }}.tar.gz
@@ -112,7 +112,7 @@ jobs:
           tar czf "agentc-bootstrap-${{ matrix.variant }}.tar.gz" agentc-bootstrap
 
       - name: Upload bootstrap artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentc-bootstrap-${{ matrix.variant }}
           path: agentc-bootstrap-${{ matrix.variant }}.tar.gz
@@ -125,13 +125,13 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           files: artifacts/*.tar.gz

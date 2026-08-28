@@ -52,7 +52,7 @@ func runAgentc(
     case .signaled(let sig): exitCode = sig
     }
     return ProcessOutput(
-      exitCode: exitCode, stdout: result.standardOutput ?? "", stderr: result.standardError ?? "")
+      exitCode: exitCode, stdout: result.standardOutput, stderr: result.standardError)
   } catch {
     return ProcessOutput(exitCode: -1, stdout: "", stderr: "launch error: \(error)")
   }
