@@ -75,6 +75,69 @@ struct AgentSessionTests {
     #expect(homeMount?.hostPath == profileDir.path)
   }
 
+  @Test("Mounts the toolkit read-only at /agent-isolation/toolkit")
+  func mountsToolkit() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let profileDir = URL(fileURLWithPath: "/tmp/claudec-test-\(UUID().uuidString)/home")
+    let configsDir = URL(fileURLWithPath: "/tmp/claudec-test-configs-\(UUID().uuidString)")
+    let toolkitDir = URL(fileURLWithPath: "/tmp/claudec-test-toolkit-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: configsDir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: toolkitDir, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: profileDir.deletingLastPathComponent())
+      try? FileManager.default.removeItem(at: configsDir)
+      try? FileManager.default.removeItem(at: toolkitDir)
+    }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: configsDir,
+      configurations: [],
+      toolkitDir: toolkitDir,
+      arguments: ["echo"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    _ = try await session.wait()
+
+    let mounts = runtime.lastContainerConfiguration!.mounts
+    let toolkit = mounts.first { $0.containerPath == "/agent-isolation/toolkit" }
+    #expect(toolkit != nil)
+    // The host path is canonicalized, so match on the directory name rather than
+    // the full path — /tmp is a symlink on macOS.
+    #expect(toolkit?.hostPath.hasSuffix(toolkitDir.lastPathComponent) == true)
+    #expect(toolkit?.isReadOnly == true)
+  }
+
+  @Test("Mounts no toolkit when none was resolved")
+  func mountsNoToolkitByDefault() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let profileDir = URL(fileURLWithPath: "/tmp/claudec-test-\(UUID().uuidString)/home")
+    let configsDir = URL(fileURLWithPath: "/tmp/claudec-test-configs-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: configsDir, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: profileDir.deletingLastPathComponent())
+      try? FileManager.default.removeItem(at: configsDir)
+    }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: URL(fileURLWithPath: "/tmp"),
+      configurationsDir: configsDir,
+      configurations: [],
+      arguments: ["echo"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    _ = try await session.wait()
+
+    let mounts = runtime.lastContainerConfiguration!.mounts
+    #expect(!mounts.contains { $0.containerPath == "/agent-isolation/toolkit" })
+  }
+
   @Test("Mounts workspace at /workspace/<name>-<last10sha>")
   func mountsWorkspace() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))

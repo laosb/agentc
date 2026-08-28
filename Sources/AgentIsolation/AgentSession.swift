@@ -99,7 +99,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
 
     if !config.customPTY {
       // In non-custom mode, nothing will ever be fed through the rawOut/stdin
-      // streams — close them up front so consumers see an immediate EOF.
+      // streams â close them up front so consumers see an immediate EOF.
       rawOutContinuation.finish()
       stdinContinuation.finish()
     }
@@ -127,7 +127,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
     var mounts: [ContainerConfiguration.Mount] = []
     var tempDirs: [URL] = []
 
-    // Profile home → /home/agent
+    // Profile home â /home/agent
     mounts.append(
       .init(
         hostPath: config.profileHomeDir.path,
@@ -155,7 +155,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
         ))
     }
 
-    // Configurations directory → /agent-isolation/agents (read-only)
+    // Configurations directory â /agent-isolation/agents (read-only)
     mounts.append(
       .init(
         hostPath: config.configurationsDir.path,
@@ -193,6 +193,19 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
         .init(
           hostPath: canonical.path,
           containerPath: containerPath
+        ))
+    }
+
+    // agentc Toolkit → /agent-isolation/toolkit (read-only). The bootstrap puts
+    // its bin directory at the very end of PATH, so these tools fill gaps in the
+    // image without ever shadowing what the image itself provides.
+    if let toolkitDir = config.toolkitDir {
+      mounts.append(
+        .init(
+          hostPath: AgentIsolationPathUtils.resolveSymlinksWithPlatformConsiderations(toolkitDir)
+            .path,
+          containerPath: "/agent-isolation/toolkit",
+          isReadOnly: true
         ))
     }
 
@@ -276,7 +289,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
         state.tempDirs = tempDirs
       }
     } catch {
-      // Container never came up — purge temp dirs eagerly and finish streams.
+      // Container never came up â purge temp dirs eagerly and finish streams.
       for dir in tempDirs {
         try? FileManager.default.removeItem(at: dir)
       }

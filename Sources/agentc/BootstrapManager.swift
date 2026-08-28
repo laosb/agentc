@@ -53,7 +53,7 @@ enum BootstrapManager {
   private static func downloadBootstrap(
     version: String, to destination: URL, verbose: Bool
   ) async throws {
-    let arch = hostArchLabel()
+    let arch = HostArchitecture.label
     let assetName = "agentc-bootstrap-\(arch)-linux-static.tar.gz"
     let url =
       "https://github.com/laosb/agentc/releases/download/v\(version)/\(assetName)"
@@ -105,15 +105,5 @@ enum BootstrapManager {
     if verbose {
       writeToStderr("agentc: bootstrap binary installed to \(destination.path)\n")
     }
-  }
-
-  private static func hostArchLabel() -> String {
-    #if arch(arm64)
-      return "arm64"
-    #elseif arch(x86_64)
-      return "x64"
-    #else
-      return "unknown"
-    #endif
   }
 }
