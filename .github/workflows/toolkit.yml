@@ -1,0 +1,85 @@
+name: Publish agentc Toolkit
+
+# The toolkit is versioned independently of agentc: it is rebuilt and published
+# only when its manifest changes, so an agentc release never reissues a toolkit
+# that nobody touched.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/toolkit/**"
+      - ".github/workflows/toolkit.yml"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Read toolkit version
+        id: manifest
+        run: |
+          source scripts/toolkit/manifest.sh
+          echo "version=$TOOLKIT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=toolkit-v$TOOLKIT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check agentc agrees on the version
+        run: |
+          source scripts/toolkit/manifest.sh
+          declared=$(grep -oE 'static let version = "[^"]+"' Sources/agentc/ToolkitManager.swift \
+            | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ "$declared" != "$TOOLKIT_VERSION" ]; then
+            echo "::error::manifest.sh has TOOLKIT_VERSION=$TOOLKIT_VERSION but" \
+                 "ToolkitManager.version is \"$declared\" — they must match."
+            exit 1
+          fi
+
+      - name: Refuse to republish an existing version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.manifest.outputs.tag }}" >/dev/null 2>&1; then
+            echo "::error::${{ steps.manifest.outputs.tag }} already exists." \
+                 "Bump TOOLKIT_VERSION in scripts/toolkit/manifest.sh (and ToolkitManager.version)."
+            exit 1
+          fi
+
+      # Every tool ships as a prebuilt static binary, so one runner produces both
+      # bundles; nothing here is compiled for the target architecture.
+      - name: Build bundles
+        run: |
+          ./scripts/toolkit/build-toolkit.sh --arch x64 --output dist
+          ./scripts/toolkit/build-toolkit.sh --arch arm64 --output dist
+
+      - name: Verify bundle contents
+        run: |
+          for arch in x64 arm64; do
+            echo "== $arch =="
+            tar tzf "dist/agentc-toolkit-$arch-linux-static.tar.gz"
+            tar xzOf "dist/agentc-toolkit-$arch-linux-static.tar.gz" ./TOOLKIT
+          done
+          # The x64 bundle runs here, so it can prove itself before shipping.
+          mkdir -p check && tar xzf dist/agentc-toolkit-x64-linux-static.tar.gz -C check
+          ./check/bin/curl --version
+          ./check/bin/jq --version
+          ./check/bin/rg --version
+          CURL_CA_BUNDLE=./check/share/ca-certificates.crt \
+            ./check/bin/curl -fsS -o /dev/null https://github.com/
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.manifest.outputs.tag }}
+          name: agentc Toolkit v${{ steps.manifest.outputs.version }}
+          body: |
+            Tools mounted read-only into every agentc container at
+            `/agent-isolation/toolkit`, built from `scripts/toolkit/manifest.sh`.
+
+            Published independently of agentc releases: this bundle changes only
+            when its manifest does.
+          files: dist/*.tar.gz
