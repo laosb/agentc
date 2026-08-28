@@ -82,7 +82,7 @@ public struct IsolationConfig: Sendable {
   public var memoryLimitMiB: Int
 
   /// Additional host directories to mount inside the container.
-  /// Each is mounted at /workspace/<pathIdentifier(canonicalPath)>.
+  /// Destinations follow ``mountPathScheme``.
   public var additionalHostMounts: [URL]
 
   /// When true, passes `AGENTC_VERBOSE=1` to the container so that the bootstrap
