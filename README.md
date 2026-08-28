@@ -60,6 +60,35 @@ agentc run -c claude,copilot
 agentc run -c copilot
 ```
 
+### Toolkit
+
+Every session mounts the **agentc Toolkit** read-only at `/agent-isolation/toolkit`: a
+small set of static binaries — `curl`, `jq`, `ripgrep` — and a CA bundle. It exists so a
+container is never entirely without tools; an image carrying nothing but a shell still has
+a `curl` for a configuration's `prepare.sh` to install with.
+
+The toolkit's `bin` sits at the **end** of `PATH`, so it only ever fills gaps: an image
+that ships its own `curl` keeps using it, and so does anything a configuration puts in
+`additionalBinPaths`. Its CA bundle is used the same way — `CURL_CA_BUNDLE`,
+`SSL_CERT_FILE` and `GIT_SSL_CAINFO` are pointed at it only on an image that ships no
+trust store of its own, which is otherwise a container where every HTTPS request fails.
+
+```sh
+agentc run --no-toolkit                 # only what the image itself provides
+agentc run --toolkit ~/my-toolkit       # a locally built bundle
+```
+
+The toolkit is versioned independently of agentc and downloaded once, to
+`~/.agentc/toolkit/v<N>`. Its contents are defined by
+[`scripts/toolkit/manifest.sh`](./scripts/toolkit/manifest.sh) — every entry pinned to an
+HTTPS URL and a SHA-256 — and CI publishes a new bundle only when that file changes, so
+upgrading agentc does not re-download a toolkit that did not move. To add a tool, add a row,
+bump `TOOLKIT_VERSION` and `ToolkitManager.version` together, and build it locally first:
+
+```sh
+./scripts/toolkit/build-toolkit.sh --output dist
+```
+
 ### Project Settings
 
 Use `agentc init` to place a `.agentc/settings.json` file in your project root to set default agent options for the project. CLI flags override project settings; some fields (like `excludes` and `additionalMounts`) are merged. 
@@ -68,7 +97,7 @@ See [docs/project-settings.md](./docs/project-settings.md) for the full schema a
 
 ### Container Images
 
-`agentc` works with any standard container image — it automatically sets up the agent user, sudo, and required tools at container start via an embedded bootstrap script. The default image is pre-configured for faster startup, but you can use any base image:
+`agentc` works with any standard container image — it automatically sets up the agent user, sudo, and required tools at container start via an embedded bootstrap script. Images that ship no tooling of their own are covered by the [toolkit](#toolkit). The default image is pre-configured for faster startup, but you can use any base image:
 
 ```sh
 agentc run -i debian:latest               # stock Debian
@@ -113,6 +142,9 @@ agentc-bootstrap                             (In-container bootstrap program)
 `AgentIsolation` depends only on Foundation and [swift-crypto](https://github.com/apple/swift-crypto). Runtime backends are conditionally compiled via Swift package traits.
 
 The `agentc-bootstrap` binary is a standalone statically-linked Linux executable that runs as the container entrypoint. It creates `agent` user and does the rest of agent initialization as needed.
+
+The agentc Toolkit is built separately from `scripts/toolkit/manifest.sh` and released on its own
+schedule; see [Toolkit](#toolkit).
 
 ## Development
 
