@@ -70,6 +70,19 @@ struct SharedOptions: ParsableArguments {
   var respectImageEntrypoint: Bool = false
 
   @Option(
+    name: .customLong("toolkit"),
+    help: ArgumentHelp(
+      "Directory holding an agentc Toolkit to mount, instead of the published one.",
+      valueName: "path"))
+  var toolkitPath: String?
+
+  @Flag(
+    name: .customLong("no-toolkit"),
+    help: "Do not mount the agentc Toolkit; use only what the image provides."
+  )
+  var noToolkit: Bool = false
+
+  @Option(
     name: .long,
     help: ArgumentHelp("Additional host directory to mount in the container.", valueName: "path")
   )
@@ -236,6 +249,16 @@ extension SharedOptions {
     }
     let binary = try await BootstrapManager.resolveBootstrapBinary(verbose: verbose)
     return .file(binary)
+  }
+
+  /// Resolve the agentc Toolkit directory to mount, or `nil` to mount none.
+  ///
+  /// Nothing is mounted when the image keeps its own entrypoint: without the
+  /// bootstrap there is no one to put the toolkit on `PATH`.
+  func resolveToolkitDir(bootstrapMode: BootstrapMode) async -> URL? {
+    guard !noToolkit else { return nil }
+    guard case .file = bootstrapMode else { return nil }
+    return await ToolkitManager.resolveToolkit(override: toolkitPath, verbose: verbose)
   }
 
   /// Resolve image reference. CLI flag → project settings → default.

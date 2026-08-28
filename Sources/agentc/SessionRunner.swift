@@ -56,6 +56,7 @@ enum SessionRunner {
 
     let resolvedImage = options.resolveImage(projectSettings: projectSettings)
     let bootstrapMode = try await options.resolveBootstrapMode(projectSettings: projectSettings)
+    let toolkitDir = await options.resolveToolkitDir(bootstrapMode: bootstrapMode)
 
     let isolationConfig = IsolationConfig(
       image: resolvedImage,
@@ -65,6 +66,7 @@ enum SessionRunner {
       configurationsDir: configurationsDir,
       configurations: configNames,
       bootstrapMode: bootstrapMode,
+      toolkitDir: toolkitDir,
       arguments: arguments,
       environment: options.resolveEnvironment(projectSettings: projectSettings),
       allocateTTY: allocateTTY,

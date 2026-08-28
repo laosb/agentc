@@ -44,6 +44,14 @@ public struct IsolationConfig: Sendable {
   /// Controls how the container entrypoint is set up.
   public var bootstrapMode: BootstrapMode
 
+  /// Host directory holding the agentc Toolkit, mounted read-only at
+  /// `/agent-isolation/toolkit`.
+  ///
+  /// The bootstrap appends its `bin` to the end of `PATH`, so these tools are
+  /// only reached for names the image does not provide itself. `nil` mounts
+  /// nothing and leaves the container with exactly what its image ships.
+  public var toolkitDir: URL?
+
   /// Arguments forwarded to the container entrypoint.
   public var arguments: [String]
 
@@ -87,6 +95,7 @@ public struct IsolationConfig: Sendable {
     configurationsDir: URL,
     configurations: [String] = ["claude"],
     bootstrapMode: BootstrapMode = .imageDefault,
+    toolkitDir: URL? = nil,
     arguments: [String] = [],
     environment: [String: String] = [:],
     allocateTTY: Bool = false,
@@ -103,6 +112,7 @@ public struct IsolationConfig: Sendable {
     self.configurationsDir = configurationsDir
     self.configurations = configurations
     self.bootstrapMode = bootstrapMode
+    self.toolkitDir = toolkitDir
     self.arguments = arguments
     self.environment = environment
     self.allocateTTY = allocateTTY
