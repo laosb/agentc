@@ -530,6 +530,60 @@ struct AgentcIntegrationTests {
 
   // MARK: - --verbose flag
 
+  @Test("Non-TTY run reserves stdout for workload output")
+  func nonTTYRunReservesStdout() async throws {
+    let base = URL(fileURLWithPath: "/tmp/__TEST_agentc_stdout.\(UUID().uuidString.prefix(6))")
+    let configDir = base.appendingPathComponent("configurations/stdout-test")
+    try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    try """
+    {
+      "v": 0,
+      "entrypoint": ["/bin/sh", "-c", "printf workload-output"],
+      "additionalMounts": [],
+      "additionalBinPaths": []
+    }
+    """.write(
+      to: configDir.appendingPathComponent("settings.json"),
+      atomically: true,
+      encoding: .utf8)
+
+    let prepareScript = configDir.appendingPathComponent("prepare.sh")
+    try """
+    #!/bin/sh
+    echo prepare-stdout
+    echo prepare-stderr >&2
+    """.write(to: prepareScript, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755], ofItemAtPath: prepareScript.path)
+
+    let configurationsDir = base.appendingPathComponent("configurations")
+    try FileManager.default.createDirectory(
+      at: configurationsDir.appendingPathComponent(".git"), withIntermediateDirectories: true)
+    _ = FileManager.default.createFile(
+      atPath: configurationsDir.appendingPathComponent(".agentc-last-pull").path,
+      contents: nil)
+
+    let result = await runAgentc(
+      args: [
+        "run",
+        "--verbose",
+        "--profile", sharedProfile,
+        "--configurations-dir", configurationsDir.path,
+        "--configurations", "stdout-test",
+        "--no-update-image",
+        "--no-toolkit",
+      ]
+    )
+
+    #expect(result.exitCode == 0)
+    #expect(result.stdout == "workload-output")
+    #expect(result.stderr.contains("==> Running prepare.sh"))
+    #expect(result.stderr.contains("prepare-stdout"))
+    #expect(result.stderr.contains("prepare-stderr"))
+  }
+
   @Test("Without --verbose, bootstrap prepare.sh message is suppressed")
   func verboseSuppressed() async throws {
     let result = await runAgentc(

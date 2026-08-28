@@ -143,7 +143,7 @@ enum SessionRunner {
       let newImage = try? await runtime.pullImage(ref: config.image)
       if let oldImage, let newImage, oldImage.digest != newImage.digest {
         if options.verbose {
-          print("agentc: loaded newer image for \(config.image)")
+          writeToStderr("agentc: loaded newer image for \(config.image)\n")
         }
         if !options.keepOldImage {
           try? await runtime.removeImage(digest: oldImage.digest)

@@ -61,10 +61,10 @@
               stderr)
           }
           if access(prepareScript, X_OK) == 0 {
-            try Helpers.run(command: prepareScript, arguments: [])
+            try Helpers.run(command: prepareScript, arguments: [], output: .stderr)
           } else {
             let shell = access("/bin/bash", X_OK) == 0 ? "/bin/bash" : "/bin/sh"
-            try Helpers.run(command: shell, arguments: [prepareScript])
+            try Helpers.run(command: shell, arguments: [prepareScript], output: .stderr)
           }
         }
 

@@ -19,14 +19,16 @@
         // Debian/Ubuntu: -d sets home without creating it (no -m).
         try Helpers.run(
           command: "useradd",
-          arguments: ["-d", "/home/agent", "-s", shell, "agent"])
+          arguments: ["-d", "/home/agent", "-s", shell, "agent"],
+          output: .stderr)
       } else if Helpers.commandExists("adduser") {
         // Alpine/BusyBox: -H prevents creating the home directory.
         try Helpers.run(
           command: "adduser",
           arguments: [
             "-D", "-h", "/home/agent", "-s", shell, "-H", "agent",
-          ])
+          ],
+          output: .stderr)
       } else {
         throw BootstrapError.setupFailed(
           "No useradd or adduser command found")

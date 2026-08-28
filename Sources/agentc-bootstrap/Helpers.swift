@@ -57,6 +57,14 @@
 
   // MARK: - Helpers
 
+  enum CommandOutput {
+    /// Route command stdout to the bootstrap's stderr while preserving command stderr.
+    case stderr
+
+    /// Discard both command stdout and stderr.
+    case discarded
+  }
+
   enum Helpers {
     /// Read an environment variable.
     static func envVar(_ name: String) -> String? {
@@ -84,10 +92,14 @@
       return nil
     }
 
-    /// Run a command synchronously via posix_spawnp. Throws on non-zero exit.
+    /// Run a setup command synchronously via posix_spawnp. Throws on non-zero exit.
+    ///
+    /// Setup stdout is routed away from the final workload's stdout by default.
     @discardableResult
     static func run(
-      command: String, arguments: [String], silent: Bool = false
+      command: String,
+      arguments: [String],
+      output: CommandOutput
     ) throws -> Int32 {
       let execPath: String
       if command.hasPrefix("/") {
@@ -112,7 +124,10 @@
       defer { posix_spawn_file_actions_destroy(&fileActions) }
 
       var devNullFd: Int32 = -1
-      if silent {
+      switch output {
+      case .stderr:
+        posix_spawn_file_actions_adddup2(&fileActions, STDERR_FILENO, STDOUT_FILENO)
+      case .discarded:
         devNullFd = open("/dev/null", O_WRONLY)
         if devNullFd >= 0 {
           posix_spawn_file_actions_adddup2(&fileActions, devNullFd, STDOUT_FILENO)
