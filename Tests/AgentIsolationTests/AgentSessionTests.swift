@@ -210,6 +210,159 @@ struct AgentSessionTests {
     #expect(workDir!.hasPrefix("/workspace/"))
   }
 
+  @Test("Host scheme preserves workspace destination and working directory")
+  func hostSchemeWorkspace() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/agentc-host-ws-\(UUID().uuidString)")
+    let workspace = base.appendingPathComponent("workspace")
+    let profileDir = base.appendingPathComponent("profile/home")
+    try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: workspace,
+      mountPathScheme: .host,
+      configurationsDir: base,
+      configurations: [],
+      arguments: ["pwd"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    _ = try await session.wait()
+
+    let containerConfig = try #require(runtime.lastContainerConfiguration)
+    let workspaceMount = containerConfig.mounts.first { $0.containerPath == workspace.path }
+    #expect(workspaceMount != nil)
+    #expect(containerConfig.workingDirectory == workspace.path)
+  }
+
+  @Test("Host scheme uses a canonical source and caller-visible symlink destination")
+  func hostSchemeCanonicalSource() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/agentc-host-link-\(UUID().uuidString)")
+    let target = base.appendingPathComponent("target")
+    let link = base.appendingPathComponent("workspace-link")
+    let profileDir = base.appendingPathComponent("profile/home")
+    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: link,
+      mountPathScheme: .host,
+      configurationsDir: base,
+      configurations: [],
+      arguments: ["pwd"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    _ = try await session.wait()
+
+    let mounts = try #require(runtime.lastContainerConfiguration).mounts
+    let workspaceMount = try #require(mounts.first { $0.containerPath == link.path })
+    let resolvedTarget = target.resolvingSymlinksInPath().path
+    #if os(macOS)
+      let expectedSource =
+        resolvedTarget.hasPrefix("/tmp") ? "/private\(resolvedTarget)" : resolvedTarget
+    #else
+      let expectedSource = resolvedTarget
+    #endif
+    #expect(workspaceMount.hostPath == expectedSource)
+  }
+
+  @Test("Host scheme places exclude overlays beneath the preserved workspace path")
+  func hostSchemeExcludeFolders() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/agentc-host-exclude-\(UUID().uuidString)")
+    let workspace = base.appendingPathComponent("workspace")
+    let profileDir = base.appendingPathComponent("profile/home")
+    try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: workspace,
+      mountPathScheme: .host,
+      excludeFolders: ["secret"],
+      configurationsDir: base,
+      configurations: [],
+      arguments: ["ls"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    _ = try await session.wait()
+
+    let mounts = try #require(runtime.lastContainerConfiguration).mounts
+    let overlay = mounts.first { $0.containerPath == "\(workspace.path)/secret" }
+    #expect(overlay?.isReadOnly == true)
+  }
+
+  @Test("Additional host mounts follow the configured scheme")
+  func additionalHostMountSchemes() async throws {
+    let base = URL(fileURLWithPath: "/tmp/agentc-host-additional-\(UUID().uuidString)")
+    let workspace = base.appendingPathComponent("workspace")
+    let additional = base.appendingPathComponent("shared")
+    try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: additional, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    for scheme in [MountPathScheme.workspace, .host] {
+      let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+      let config = IsolationConfig(
+        image: "test:latest",
+        profileHomeDir: base.appendingPathComponent("profile-\(scheme.rawValue)/home"),
+        workspace: workspace,
+        mountPathScheme: scheme,
+        configurationsDir: base,
+        configurations: [],
+        arguments: ["ls"],
+        additionalHostMounts: [additional]
+      )
+      let session = AgentSession(config: config, runtime: runtime)
+      try await session.start()
+      _ = try await session.wait()
+
+      let mounts = try #require(runtime.lastContainerConfiguration).mounts
+      let expected = AgentIsolationPathUtils.containerMountPath(for: additional, scheme: scheme)
+      #expect(mounts.contains { $0.containerPath == expected })
+    }
+  }
+
+  @Test("Host scheme rejects agentc-owned destinations")
+  func hostSchemeRejectsReservedDestinations() async throws {
+    for destination in [
+      "/", "/home/agent", "/agent-isolation/agents", "/agent-isolation/toolkit",
+      "/entrypoint-bootstrap",
+    ] {
+      let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+      let config = IsolationConfig(
+        image: "test:latest",
+        profileHomeDir: URL(fileURLWithPath: "/tmp/profile"),
+        workspace: URL(fileURLWithPath: destination),
+        mountPathScheme: .host,
+        configurationsDir: URL(fileURLWithPath: "/tmp"),
+        configurations: [],
+        arguments: ["true"]
+      )
+      let session = AgentSession(config: config, runtime: runtime)
+
+      do {
+        try await session.start()
+        Issue.record("Expected \(destination) to be rejected")
+      } catch AgentSessionError.unsafeMountDestination(let rejected) {
+        #expect(rejected == destination)
+      } catch {
+        Issue.record("Unexpected error: \(error)")
+      }
+      #expect(runtime.prepareCallCount == 0)
+    }
+  }
+
   @Test("Creates exclude folder overlay mounts")
   func excludeFolders() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
@@ -658,6 +811,39 @@ struct ConfigurationTests {
     // Verify host path uses pathSegment in additionalMounts dir
     let expectedSegment = AgentIsolationPathUtils.pathIdentifier(for: "/data/models")
     #expect(additionalMount?.hostPath.contains("additionalMounts/\(expectedSegment)") == true)
+  }
+
+  @Test("Configuration additional mounts do not follow the host path scheme")
+  func configurationMountsIgnoreHostScheme() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/agentc-config-mount-scheme-\(UUID().uuidString)")
+    let profileDir = base.appendingPathComponent("home")
+    let configsDir = try makeConfigsDir(configs: [
+      "myconfig": [
+        "additionalMounts": ["/data/models"],
+        "entrypoint": ["echo"],
+      ]
+    ])
+    defer {
+      try? FileManager.default.removeItem(at: base)
+      try? FileManager.default.removeItem(at: configsDir)
+    }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: base,
+      mountPathScheme: .host,
+      configurationsDir: configsDir,
+      configurations: ["myconfig"],
+      arguments: ["echo"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    _ = try await session.wait()
+
+    let mounts = try #require(runtime.lastContainerConfiguration).mounts
+    #expect(mounts.contains { $0.containerPath == "/data/models" })
   }
 
   @Test("Creates additional mounts from multiple configurations")

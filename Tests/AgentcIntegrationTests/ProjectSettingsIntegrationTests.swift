@@ -148,6 +148,44 @@ struct ProjectSettingsIntegrationTests {
     #expect(result.stdout == "America/Los_Angeles|en_US.UTF-8")
   }
 
+  @Test("--agentc-folder applies agent.mountPathScheme to workspace and additional mounts")
+  func agentcFolderAppliesMountPathScheme() async throws {
+    let base = URL(fileURLWithPath: "/tmp/__TEST_agentc_ps_scheme.\(UUID().uuidString.prefix(6))")
+    let workspace = base.appendingPathComponent("workspace")
+    let shared = base.appendingPathComponent("shared")
+    let settingsDir = base.appendingPathComponent("settings")
+    try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: shared, withIntermediateDirectories: true)
+    try "settings_mount_content".write(
+      to: shared.appendingPathComponent("probe.txt"), atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    try writeProjectSettings(
+      """
+      {
+        "agent": {
+          "mountPathScheme": "host",
+          "additionalMounts": ["\(shared.path)"]
+        }
+      }
+      """,
+      at: settingsDir)
+
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--workspace", workspace.path,
+        "--agentc-folder", settingsDir.appendingPathComponent(".agentc").path,
+        "--no-update-image",
+        "--", "printf '%s|' \"$PWD\"; cat '\(shared.path)/probe.txt'",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout == "\(workspace.path)|settings_mount_content")
+  }
+
   // MARK: - CLI Override
 
   @Test("CLI --cpus overrides project settings agent.cpus")
@@ -177,6 +215,38 @@ struct ProjectSettingsIntegrationTests {
     #expect(result.exitCode == 0)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "3")
+  }
+
+  @Test("CLI --mount-path-scheme overrides project settings")
+  func cliOverridesProjectMountPathScheme() async throws {
+    let base = URL(fileURLWithPath: "/tmp/__TEST_agentc_ps_ovscheme.\(UUID().uuidString.prefix(6))")
+    let workspace = base.appendingPathComponent("workspace")
+    let settingsDir = base.appendingPathComponent("settings")
+    try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    try writeProjectSettings(
+      """
+      { "agent": { "mountPathScheme": "host" } }
+      """,
+      at: settingsDir)
+
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--workspace", workspace.path,
+        "--agentc-folder", settingsDir.appendingPathComponent(".agentc").path,
+        "--mount-path-scheme", "workspace",
+        "--no-update-image",
+        "--", "pwd",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(
+      result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        == workspaceContainerPath(for: workspace))
   }
 
   @Test("CLI --env overrides matching project environment variables")

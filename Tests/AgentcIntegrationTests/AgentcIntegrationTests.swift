@@ -202,6 +202,52 @@ struct AgentcIntegrationTests {
     #expect(result.output.contains(containerPath))
   }
 
+  @Test("--mount-path-scheme host preserves the workspace path and working directory")
+  func hostMountPathScheme() async throws {
+    let ws = URL(fileURLWithPath: "/tmp/__TEST_agentc_hostws.\(UUID().uuidString.prefix(6))")
+    try FileManager.default.createDirectory(at: ws, withIntermediateDirectories: true)
+    try "host_scheme_content".write(
+      to: ws.appendingPathComponent("probe.txt"), atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: ws) }
+
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--workspace", ws.path,
+        "--mount-path-scheme", "host",
+        "--no-update-image",
+        "--", "printf '%s|' \"$PWD\"; cat probe.txt",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout == "\(ws.path)|host_scheme_content")
+  }
+
+  @Test("--mount-path-scheme host applies to --additional-mount")
+  func hostSchemeAdditionalMount() async throws {
+    let shared = URL(fileURLWithPath: "/tmp/__TEST_agentc_hostmnt.\(UUID().uuidString.prefix(6))")
+    try FileManager.default.createDirectory(at: shared, withIntermediateDirectories: true)
+    try "additional_host_content".write(
+      to: shared.appendingPathComponent("probe.txt"), atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: shared) }
+
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--mount-path-scheme", "host",
+        "--additional-mount", shared.path,
+        "--no-update-image",
+        "--", "cat", "\(shared.path)/probe.txt",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.stdout == "additional_host_content")
+  }
+
   @Test("--exclude hides sub-folder contents")
   func excludeFolders() async throws {
     let ws = URL(fileURLWithPath: "/tmp/__TEST_agentc_excl.\(UUID().uuidString.prefix(6))")

@@ -7,7 +7,7 @@ import Synchronization
 #endif
 
 /// Errors surfaced by ``AgentSession``.
-public enum AgentSessionError: Error, Sendable {
+public enum AgentSessionError: Error, Sendable, Equatable {
   /// ``AgentSession/write(_:)`` or ``AgentSession/resize(cols:rows:)`` was called
   /// on a session whose ``IsolationConfig/customPTY`` is `false`.
   case customPTYNotEnabled
@@ -16,6 +16,8 @@ public enum AgentSessionError: Error, Sendable {
   case notStarted
   /// ``AgentSession/start(entrypoint:timeout:)`` was called more than once.
   case alreadyStarted
+  /// A host-preserving mount would replace a destination owned by agentc.
+  case unsafeMountDestination(String)
 }
 
 /// Orchestrates running an isolated agent container session using a ``ContainerRuntime``.
@@ -112,11 +114,26 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       in: config.configurationsDir
     )
 
-    try await runtime.prepare()
-
     let canonicalWorkspace = AgentIsolationPathUtils.resolveSymlinksWithPlatformConsiderations(
       config.workspace)
-    let wsContainerPath = AgentIsolationPathUtils.workspaceContainerPath(for: config.workspace)
+    let wsContainerPath = AgentIsolationPathUtils.containerMountPath(
+      for: config.workspace,
+      scheme: config.mountPathScheme)
+
+    if config.mountPathScheme == .host {
+      let hostDestinations =
+        [wsContainerPath]
+        + config.additionalHostMounts.map {
+          AgentIsolationPathUtils.containerMountPath(for: $0, scheme: .host)
+        }
+      if let reserved = hostDestinations.first(where: {
+        AgentIsolationPathUtils.isReservedHostMountDestination($0)
+      }) {
+        throw AgentSessionError.unsafeMountDestination(reserved)
+      }
+    }
+
+    try await runtime.prepare()
 
     try FileManager.default.createDirectory(
       at: config.profileHomeDir,
@@ -187,8 +204,9 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
     // Additional host mounts (from CLI --additional-mount flags)
     for hostMount in config.additionalHostMounts {
       let canonical = AgentIsolationPathUtils.resolveSymlinksWithPlatformConsiderations(hostMount)
-      let containerPath =
-        "/workspace/\(AgentIsolationPathUtils.pathIdentifier(for: canonical.path))"
+      let containerPath = AgentIsolationPathUtils.containerMountPath(
+        for: hostMount,
+        scheme: config.mountPathScheme)
       mounts.append(
         .init(
           hostPath: canonical.path,
