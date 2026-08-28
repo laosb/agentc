@@ -67,8 +67,27 @@ public enum AgentIsolationPathUtils {
       let canonical = resolveSymlinksWithPlatformConsiderations(hostPath)
       return "/workspace/\(pathIdentifier(for: canonical.path))"
     case .host:
-      return hostPath.standardizedFileURL.path
+      return lexicallyStandardizedAbsolutePath(hostPath.path)
     }
+  }
+
+  /// Standardize `.` and `..` path components without consulting the filesystem.
+  ///
+  /// `URL.standardizedFileURL` may resolve symlinks as part of standardization,
+  /// which would change the caller-visible destination required by the host scheme.
+  private static func lexicallyStandardizedAbsolutePath(_ path: String) -> String {
+    var components: [Substring] = []
+    for component in path.split(separator: "/", omittingEmptySubsequences: true) {
+      switch component {
+      case ".":
+        continue
+      case "..":
+        if !components.isEmpty { components.removeLast() }
+      default:
+        components.append(component)
+      }
+    }
+    return components.isEmpty ? "/" : "/" + components.joined(separator: "/")
   }
 
   /// Whether a host-preserving destination conflicts with agentc-owned container paths.
