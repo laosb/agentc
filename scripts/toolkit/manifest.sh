@@ -5,13 +5,13 @@
 # PATH. It guarantees that curl and friends exist even on an image that ships
 # nothing, while leaving the image's own copies in charge when it has them.
 #
-# This file is the only input to the bundle: CI rebuilds and republishes the
-# toolkit when it changes, and at no other time — an agentc release does not
-# reissue an unchanged toolkit.
+# This manifest and build-toolkit.sh are the bundle inputs: CI rebuilds and
+# republishes the toolkit when either changes, and at no other time — an agentc
+# release does not reissue an unchanged toolkit.
 #
-# Bump TOOLKIT_VERSION in the same commit as any change below. The release tag
-# is `toolkit-v$TOOLKIT_VERSION`, and CI refuses to overwrite an existing tag.
-# `ToolkitManager.version` must match; ToolkitManifestTests enforces that.
+# CI increments TOOLKIT_VERSION after an input changes and merges the matching
+# `ToolkitManager.version` through a version-bump PR before publishing
+# `toolkit-v$TOOLKIT_VERSION`. ToolkitManifestTests keeps them synchronized.
 
 TOOLKIT_VERSION=1
 

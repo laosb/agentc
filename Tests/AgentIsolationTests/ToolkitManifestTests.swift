@@ -43,7 +43,7 @@ struct ToolkitManifestTests {
       String(declared) == String(expected),
       """
       scripts/toolkit/manifest.sh publishes toolkit v\(declared) but agentc \
-      downloads v\(expected). Bump both together.
+      downloads v\(expected). The declarations must stay synchronized.
       """)
   }
 

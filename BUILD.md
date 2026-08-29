@@ -133,6 +133,8 @@ Released versions of agentc download the matching bootstrap binary automatically
 
 The agentc Toolkit is released independently from the main executable. Its contents are defined by [`scripts/toolkit/manifest.sh`](./scripts/toolkit/manifest.sh), and its release workflow lives in [`.github/workflows/toolkit.yml`](./.github/workflows/toolkit.yml).
 
+When the manifest, builder, or release workflow changes on `main`, CI increments the Toolkit version in both the manifest and `ToolkitManager`, squash-merges a short-lived version-bump PR, and publishes the new Toolkit release from that merge.
+
 ## Architecture
 
 ```text

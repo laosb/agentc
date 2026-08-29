@@ -14,14 +14,14 @@ import Subprocess
 /// with. The bootstrap appends its `bin` to the *end* of `PATH`, so an image
 /// that ships its own copies keeps using them.
 ///
-/// It is versioned independently of agentc: a release is cut only when
-/// `scripts/toolkit/manifest.sh` changes, so upgrading agentc does not re-download
-/// a toolkit that did not move.
+/// It is versioned independently of agentc: a release is cut only when the
+/// Toolkit's manifest, builder, or release workflow changes, so upgrading agentc
+/// does not re-download a toolkit that did not move.
 enum ToolkitManager {
   /// Toolkit release this agentc expects.
   ///
-  /// Must equal `TOOLKIT_VERSION` in `scripts/toolkit/manifest.sh`;
-  /// `ToolkitManifestTests` fails the build when the two drift apart.
+  /// Toolkit release CI keeps this equal to `TOOLKIT_VERSION` in
+  /// `scripts/toolkit/manifest.sh`; `ToolkitManifestTests` catches any drift.
   static let version = "1"
 
   /// Where an installed toolkit lives. Each version gets its own directory, so

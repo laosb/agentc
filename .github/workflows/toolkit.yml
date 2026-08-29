@@ -1,8 +1,8 @@
 name: Publish agentc Toolkit
 
 # The toolkit is versioned independently of agentc: it is rebuilt and published
-# only when its manifest changes, so an agentc release never reissues a toolkit
-# that nobody touched.
+# only when its inputs change, so an agentc release never reissues a toolkit
+# that nobody touched. CI owns the version bump and keeps agentc in sync.
 on:
   push:
     branches: [main]
@@ -11,8 +11,102 @@ on:
       - ".github/workflows/toolkit.yml"
   workflow_dispatch:
 
+concurrency:
+  group: toolkit-release
+  cancel-in-progress: false
+
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      publish: ${{ steps.prepare.outputs.publish }}
+      version: ${{ steps.prepare.outputs.version }}
+      tag: ${{ steps.prepare.outputs.tag }}
+      commit: ${{ steps.prepare.outputs.commit }}
+
+    steps:
+      # Always work from the newest main. A queued run may have been superseded
+      # by another Toolkit change while it waited for the concurrency lock.
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Prepare toolkit version
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source scripts/toolkit/manifest.sh
+
+          version="$TOOLKIT_VERSION"
+          tag="toolkit-v$version"
+
+          if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; then
+            # This is either a new Toolkit change or a stale queued/retried run.
+            # Comparing all release inputs to the current tag distinguishes them.
+            if git diff --quiet "$tag" -- scripts/toolkit .github/workflows/toolkit.yml; then
+              echo "Toolkit inputs already match $tag; there is nothing to publish."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            version=$((version + 1))
+            tag="toolkit-v$version"
+            while git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null; do
+              version=$((version + 1))
+              tag="toolkit-v$version"
+            done
+          fi
+
+          sed -i -E "s/^TOOLKIT_VERSION=[0-9]+$/TOOLKIT_VERSION=$version/" \
+            scripts/toolkit/manifest.sh
+          sed -i -E \
+            "s/(static let version = \")[^\"]+(\".*)/\\1$version\\2/" \
+            Sources/agentc/ToolkitManager.swift
+
+          test "$(grep -c "^TOOLKIT_VERSION=$version$" scripts/toolkit/manifest.sh)" -eq 1
+          test "$(grep -c "static let version = \"$version\"" \
+            Sources/agentc/ToolkitManager.swift)" -eq 1
+
+          if ! git diff --quiet -- \
+            scripts/toolkit/manifest.sh Sources/agentc/ToolkitManager.swift
+          then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            branch="automation/toolkit-v${version}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            git switch -c "$branch"
+            git add scripts/toolkit/manifest.sh Sources/agentc/ToolkitManager.swift
+            git commit -m "chore(toolkit): bump Toolkit to v$version"
+            git push --set-upstream origin "$branch"
+
+            # main requires pull requests. Merge this mechanical bump through a
+            # short-lived branch, then publish from the resulting main commit.
+            pr_url=$(gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore(toolkit): bump Toolkit to v$version" \
+              --body "Automated version bump for Toolkit workflow run $GITHUB_RUN_ID.")
+            gh pr merge "$pr_url" --squash --delete-branch
+            commit=$(gh pr view "$pr_url" --json mergeCommit,state \
+              --jq 'select(.state == "MERGED") | .mergeCommit.oid')
+            test -n "$commit"
+          else
+            commit=$(git rev-parse HEAD)
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -20,6 +114,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
 
       - name: Read toolkit version
         id: manifest
@@ -27,6 +123,9 @@ jobs:
           source scripts/toolkit/manifest.sh
           echo "version=$TOOLKIT_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=toolkit-v$TOOLKIT_VERSION" >> "$GITHUB_OUTPUT"
+
+          test "$TOOLKIT_VERSION" = "${{ needs.prepare.outputs.version }}"
+          test "toolkit-v$TOOLKIT_VERSION" = "${{ needs.prepare.outputs.tag }}"
 
       - name: Check agentc agrees on the version
         run: |
@@ -45,7 +144,7 @@ jobs:
         run: |
           if gh release view "${{ steps.manifest.outputs.tag }}" >/dev/null 2>&1; then
             echo "::error::${{ steps.manifest.outputs.tag }} already exists." \
-                 "Bump TOOLKIT_VERSION in scripts/toolkit/manifest.sh (and ToolkitManager.version)."
+                 "A concurrent publisher created it after this run selected its version."
             exit 1
           fi
 
@@ -75,11 +174,12 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.manifest.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.commit }}
           name: agentc Toolkit v${{ steps.manifest.outputs.version }}
           body: |
             Tools mounted read-only into every agentc container at
             `/agent-isolation/toolkit`, built from `scripts/toolkit/manifest.sh`.
 
             Published independently of agentc releases: this bundle changes only
-            when its manifest does.
+            when its release inputs do.
           files: dist/*.tar.gz
