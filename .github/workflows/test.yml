@@ -1,12 +1,24 @@
 name: Test
 
+# Documentation and the standalone installer never affect the build or the test
+# suite, so changes limited to them skip CI entirely.
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "**/*.md"
+      - docs/**
+      - install.sh
+      - LICENSE
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - "**/*.md"
+      - docs/**
+      - install.sh
+      - LICENSE
   workflow_dispatch:
 
 jobs:

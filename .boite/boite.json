@@ -1,13 +1,13 @@
 {
   "$schema" : "./boite.schema.json",
   "schemaVersion" : 23,
-  "createdAt" : "2026-08-28T02:05:44Z",
-  "id" : "5D79B032-A706-4E5E-AE70-0F4A2B581E5B",
+  "createdAt" : "2026-08-08T08:50:06Z",
+  "id" : "F02D376A-B248-47BF-8EB3-A2E246B8B910",
   "name" : "agentc",
   "children" : [
 
   ],
-  "color" : "#89b4fa",
-  "icon" : "boite://prompt.underscore",
+  "color" : "system://green",
+  "icon" : "lucide://container",
   "workingDirectory" : "."
 }
