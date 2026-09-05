@@ -1,20 +1,88 @@
 #!/bin/sh
 # agentc installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/laosb/agentc/main/install.sh | sh
+#        curl -fsSL https://raw.githubusercontent.com/laosb/agentc/main/install.sh | sh -s -- --beta
 set -eu
 
 REPO="laosb/agentc"
 INSTALL_DIR="${HOME}/.agentc/bin"
 LINK_DIR="${HOME}/.local/bin"
 
+# Release selection, set by parse_args().
+CHANNEL="stable"
+REQUESTED_VERSION=""
+
 info()  { printf '  \033[1;32m✔\033[0m %s\n' "$1"; }
 warn()  { printf '  \033[1;33m⚠\033[0m %s\n' "$1"; }
 err()   { printf '  \033[1;31m✘\033[0m %s\n' "$1" >&2; exit 1; }
+
+usage() {
+    cat <<'USAGE'
+  agentc installer
+
+  Usage:
+    install.sh [OPTIONS]
+    curl -fsSL https://raw.githubusercontent.com/laosb/agentc/main/install.sh | sh -s -- [OPTIONS]
+
+  Options:
+    --beta               Install the latest beta release, or the latest stable
+                         release if that one is newer.
+    --alpha              Install the latest alpha release, or the latest beta or
+                         stable release if one of those is newer.
+    -v, --version <ver>  Install a specific release, e.g. '1.4.0' or
+                         '1.4.0-beta.0'.
+    -h, --help           Show this help.
+
+  Without options, the latest stable release is installed.
+USAGE
+}
 
 need_cmd() {
     if ! command -v "$1" >/dev/null 2>&1; then
         err "Required command '$1' not found. Please install it and try again."
     fi
+}
+
+select_channel() {
+    if [ "$CHANNEL" != "stable" ] || [ -n "$REQUESTED_VERSION" ]; then
+        err "--beta, --alpha and --version are mutually exclusive."
+    fi
+    CHANNEL="$1"
+}
+
+select_version() {
+    if [ "$CHANNEL" != "stable" ] || [ -n "$REQUESTED_VERSION" ]; then
+        err "--beta, --alpha and --version are mutually exclusive."
+    fi
+    [ -n "$1" ] || err "--version requires a version, e.g. --version 1.4.0"
+
+    # Tags carry a leading 'v'; accept the version with or without it.
+    case "$1" in
+        v*) REQUESTED_VERSION="$1" ;;
+        *)  REQUESTED_VERSION="v$1" ;;
+    esac
+    case "$REQUESTED_VERSION" in
+        v[0-9]*) ;;
+        *) err "Invalid version '$1'. Expected something like '1.4.0' or '1.4.0-beta.0'." ;;
+    esac
+}
+
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --beta)  select_channel "beta" ;;
+            --alpha) select_channel "alpha" ;;
+            -v|--version)
+                [ $# -ge 2 ] || err "--version requires a version, e.g. --version 1.4.0"
+                select_version "$2"
+                shift
+                ;;
+            --version=*) select_version "${1#--version=}" ;;
+            -h|--help) usage; exit 0 ;;
+            *) usage >&2; err "Unknown option: $1" ;;
+        esac
+        shift
+    done
 }
 
 fetch() {
@@ -66,31 +134,84 @@ check_requirements() {
     fi
 }
 
+release_tags() {
+    # Print the tag_name of every release in the given API response, in the
+    # order GitHub returned them (newest first). Splitting on commas keeps at
+    # most one tag per line for both pretty-printed and compact JSON.
+    printf '%s' "$1" | tr ',' '\n' |
+        sed -n 's/.*"tag_name" *: *"\([^"]*\)".*/\1/p'
+}
+
+tag_channel() {
+    # agentc releases are tagged 'vX.Y.Z', optionally with an '-alpha.N' or
+    # '-beta.N' suffix. The repo also publishes independently versioned
+    # 'toolkit-vN' releases, which belong to no channel and are never installed.
+    case "$1" in
+        v[0-9]*-alpha*) echo "alpha" ;;
+        v[0-9]*-beta*)  echo "beta" ;;
+        v[0-9]*-*)      echo "prerelease" ;;
+        v[0-9]*)        echo "stable" ;;
+        *)              echo "none" ;;
+    esac
+}
+
+tag_in_channel() {
+    # tag_in_channel TAG CHANNEL — each channel also includes the more stable
+    # ones, so --beta never installs something older than the latest stable.
+    TAG_CHANNEL="$(tag_channel "$1")"
+    case "$2" in
+        stable) [ "$TAG_CHANNEL" = "stable" ] ;;
+        beta)   [ "$TAG_CHANNEL" = "stable" ] || [ "$TAG_CHANNEL" = "beta" ] ;;
+        alpha)  [ "$TAG_CHANNEL" != "none" ] ;;
+        *)      false ;;
+    esac
+}
+
+pick_tag() {
+    # pick_tag RESPONSE CHANNEL — the newest tag in RESPONSE on CHANNEL, if any.
+    for CANDIDATE in $(release_tags "$1"); do
+        if tag_in_channel "$CANDIDATE" "$2"; then
+            printf '%s\n' "$CANDIDATE"
+            return 0
+        fi
+    done
+}
+
 find_release() {
     API_BASE="https://api.github.com/repos/${REPO}/releases"
     TAG=""
-    IS_PRERELEASE=false
+    RESPONSE=""
 
-    # Try latest stable release first
-    RESPONSE="$(fetch "${API_BASE}/latest" 2>/dev/null)" || true
-    if [ -n "$RESPONSE" ]; then
-        TAG="$(echo "$RESPONSE" | sed -n 's/.*"tag_name" *: *"\([^"]*\)".*/\1/p' | head -1)"
+    if [ -n "$REQUESTED_VERSION" ]; then
+        RESPONSE="$(fetch "${API_BASE}/tags/${REQUESTED_VERSION}" 2>/dev/null)" || true
+        TAG="$(release_tags "$RESPONSE" | head -1)"
+        [ -n "$TAG" ] || err "Release ${REQUESTED_VERSION} not found. See https://github.com/${REPO}/releases for the available versions."
+    else
+        if [ "$CHANNEL" = "stable" ]; then
+            RESPONSE="$(fetch "${API_BASE}/latest" 2>/dev/null)" || true
+            LATEST_TAG="$(release_tags "$RESPONSE" | head -1)"
+            # 'latest' may well be a toolkit release, so only take an agentc one.
+            if [ -n "$LATEST_TAG" ] && tag_in_channel "$LATEST_TAG" "stable"; then
+                TAG="$LATEST_TAG"
+            fi
+        fi
+
+        if [ -z "$TAG" ]; then
+            RESPONSE="$(fetch "${API_BASE}?per_page=100" 2>/dev/null)" || err "Failed to fetch releases from GitHub."
+            TAG="$(pick_tag "$RESPONSE" "$CHANNEL")"
+        fi
+
+        if [ -z "$TAG" ] && [ "$CHANNEL" = "stable" ]; then
+            # No stable release yet — fall back to the newest pre-release.
+            TAG="$(pick_tag "$RESPONSE" "alpha")"
+            [ -z "$TAG" ] || warn "No stable release found."
+        fi
+
+        [ -n "$TAG" ] || err "No ${CHANNEL} release found for ${REPO}."
     fi
 
-    if [ -z "$TAG" ]; then
-        # No stable release — get all releases and pick the first (latest) one
-        RESPONSE="$(fetch "${API_BASE}?per_page=1" 2>/dev/null)" || err "Failed to fetch releases from GitHub."
-        TAG="$(echo "$RESPONSE" | sed -n 's/.*"tag_name" *: *"\([^"]*\)".*/\1/p' | head -1)"
-        IS_PRERELEASE=true
-    fi
-
-    if [ -z "$TAG" ]; then
-        err "No releases found for ${REPO}."
-    fi
-
-    if [ "$IS_PRERELEASE" = true ]; then
-        warn "No stable release found. Installing pre-release ${TAG}."
-        warn "This is pre-release software and may be unstable."
+    if ! tag_in_channel "$TAG" "stable"; then
+        warn "${TAG} is a pre-release and may be unstable."
     fi
 }
 
@@ -183,6 +304,8 @@ print_post_install() {
 }
 
 main() {
+    parse_args "$@"
+
     echo ""
     echo "  \033[1magentc installer\033[0m"
     echo ""
@@ -197,4 +320,4 @@ main() {
     print_post_install
 }
 
-main
+main "$@"
