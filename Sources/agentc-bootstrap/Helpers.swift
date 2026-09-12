@@ -1,6 +1,10 @@
-#if canImport(FoundationEssentials) && canImport(Musl)
+#if canImport(FoundationEssentials) && (canImport(Musl) || canImport(Glibc))
   import FoundationEssentials
-  @preconcurrency import Musl
+  #if canImport(Musl)
+    @preconcurrency import Musl
+  #else
+    @preconcurrency import Glibc
+  #endif
 
   // MARK: - Errors
 

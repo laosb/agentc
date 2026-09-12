@@ -1,6 +1,10 @@
-#if canImport(FoundationEssentials) && canImport(Musl)
+#if canImport(FoundationEssentials) && (canImport(Musl) || canImport(Glibc))
   import FoundationEssentials
-  import Musl
+  #if canImport(Musl)
+    import Musl
+  #else
+    @preconcurrency import Glibc
+  #endif
 
   /// Guest-side startup instrumentation.
   ///

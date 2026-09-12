@@ -99,6 +99,10 @@ let package = Package(
       dependencies: ["agentc"]
     ),
     .testTarget(
+      name: "AgentcBootstrapTests",
+      dependencies: ["agentc-bootstrap"]
+    ),
+    .testTarget(
       name: "AgentIsolationTests",
       dependencies: [
         "AgentIsolation",

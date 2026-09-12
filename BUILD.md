@@ -68,6 +68,22 @@ swift test \
 
 The integration test suite also needs a working container runtime, a locally available `agentc-bootstrap`, test images, and agent configurations. See [`.github/workflows/test.yml`](./.github/workflows/test.yml) for the CI setup used by the project.
 
+Bootstrap ownership regression tests run on Linux with the native toolchain (the
+Static Linux SDK does not include the Testing module):
+
+```sh
+swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcBootstrapTests
+```
+
+These exercise the bootstrap's ownership code against temporary directories,
+simulating mounts that reject unnecessary ownership changes, without requiring root
+or a container runtime. CI runs them on both Linux architectures.
+
+To also check a real shared mount, set `AGENTC_TEST_UNCHOWNABLE_DIRECTORY` to an
+existing directory owned by the test user whose mount rejects even a same-owner
+`chown` (for example, `/home/agent` inside an Apple Containerization guest). This
+opt-in test attempts only that no-op ownership change and does not create files.
+
 ## Release-style `agentc` builds
 
 `build.sh` builds the `agentc` executable, selects runtime traits, and copies the result to `./agentc`.

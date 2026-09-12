@@ -1,6 +1,10 @@
-#if canImport(FoundationEssentials) && canImport(Musl)
+#if canImport(FoundationEssentials) && (canImport(Musl) || canImport(Glibc))
   import FoundationEssentials
-  @preconcurrency import Musl
+  #if canImport(Musl)
+    @preconcurrency import Musl
+  #else
+    @preconcurrency import Glibc
+  #endif
 
   /// Guest side of the profile-ownership protocol.
   ///
@@ -232,7 +236,13 @@
         let descriptor = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
         if descriptor < 0 { _exit(13) }
         let byte: [UInt8] = [0x61]
-        let written = byte.withUnsafeBytes { Musl.write(descriptor, $0.baseAddress, 1) }
+        let written = byte.withUnsafeBytes {
+          #if canImport(Musl)
+            Musl.write(descriptor, $0.baseAddress, 1)
+          #else
+            Glibc.write(descriptor, $0.baseAddress, 1)
+          #endif
+        }
         close(descriptor)
         if written != 1 { _exit(14) }
         if unlink(path) != 0 { _exit(15) }
@@ -331,16 +341,45 @@
     /// a home with the wrong owner means the record no longer describes this
     /// profile, and quietly fixing it would hide that from the host.
     static func ensureHomeDirectory(identity: (uid: uid_t, gid: gid_t)) throws {
+      try ensureOwnedDirectory(at: homePath, identity: identity)
+    }
+
+    /// Create a directory if missing and change its owner only when needed.
+    ///
+    /// The ownership operation is injectable so tests can model a shared
+    /// filesystem that rejects even a no-op chown with EPERM.
+    static func ensureOwnedDirectory(
+      at path: String, identity: (uid: uid_t, gid: gid_t),
+      changeOwner: (String, uid_t, gid_t) -> Int32 = { lchown($0, $1, $2) }
+    ) throws {
       var info = stat()
-      if lstat(homePath, &info) != 0 {
-        guard mkdir(homePath, 0o700) == 0 else {
+      if lstat(path, &info) != 0 {
+        guard errno == ENOENT else {
           throw BootstrapError.setupFailed(
-            "cannot create \(homePath): \(String(cString: strerror(errno)))")
+            "cannot inspect \(path): \(String(cString: strerror(errno)))")
+        }
+        guard mkdir(path, 0o700) == 0 else {
+          throw BootstrapError.setupFailed(
+            "cannot create \(path): \(String(cString: strerror(errno)))")
+        }
+        // A shared filesystem may map a newly created directory straight to
+        // the agent user. Check the actual owner instead of assuming root.
+        guard lstat(path, &info) == 0 else {
+          throw BootstrapError.setupFailed(
+            "cannot inspect \(path): \(String(cString: strerror(errno)))")
         }
       }
-      guard chown(homePath, identity.uid, identity.gid) == 0 else {
+      guard (info.st_mode & S_IFMT) == S_IFDIR else {
+        throw BootstrapError.setupFailed("\(path) is not a directory")
+      }
+
+      // Some shared mounts reject chown even when the requested owner already
+      // matches. As in OwnershipWalker, do not make an unnecessary metadata
+      // write that would abort the rest of initialization and repair.
+      guard info.st_uid != identity.uid || info.st_gid != identity.gid else { return }
+      guard changeOwner(path, identity.uid, identity.gid) == 0 else {
         throw BootstrapError.setupFailed(
-          "cannot chown \(homePath): \(String(cString: strerror(errno)))")
+          "cannot chown \(path): \(String(cString: strerror(errno)))")
       }
     }
 
@@ -356,14 +395,7 @@
         let path = "\(homePath)/\(directory)"
         var existing = stat()
         if lstat(path, &existing) == 0 { continue }
-        guard mkdir(path, 0o700) == 0 else {
-          throw BootstrapError.setupFailed(
-            "cannot create \(path): \(String(cString: strerror(errno)))")
-        }
-        guard chown(path, identity.uid, identity.gid) == 0 else {
-          throw BootstrapError.setupFailed(
-            "cannot chown \(path): \(String(cString: strerror(errno)))")
-        }
+        try ensureOwnedDirectory(at: path, identity: identity)
         created += 1
       }
       return created
