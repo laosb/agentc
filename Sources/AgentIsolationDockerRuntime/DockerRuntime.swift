@@ -291,24 +291,13 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     }
 
     // Attach to container for I/O (before starting, so we don't miss output)
-    let attachConnection: DockerStreamAttach?
+    let attachConnection: DockerStreamAttach
     do {
-      let conn = try DockerStreamAttach.attach(
+      attachConnection = try DockerStreamAttach.attach(
         endpoint: endpoint,
         containerId: containerId,
         tty: useTTY
       )
-
-      switch configuration.io {
-      case .currentTerminal, .standardIO:
-        conn.startIO(
-          stdin: .standardInput, stdout: .standardOutput, stderr: .standardError,
-          observer: configuration.stdioObserver)
-      case .custom(let stdin, let stdout, let stderr, _):
-        conn.startCustomIO(
-          stdin: stdin, stdout: stdout, stderr: stderr, observer: configuration.stdioObserver)
-      }
-      attachConnection = conn
     } catch {
       // If attach fails, clean up and rethrow
       terminalState?.restore()
@@ -320,10 +309,23 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     do {
       try await client.startContainer(id: containerId)
     } catch {
-      attachConnection?.stop()
+      attachConnection.stop()
       terminalState?.restore()
       try? await client.removeContainer(id: containerId)
       throw error
+    }
+
+    // Keep stdin open until startup completes. In Kata, early stdin EOF can
+    // make CloseIO hold the lock that Start needs to initialize the I/O copier.
+    // The attach socket already buffers any output produced during startup.
+    switch configuration.io {
+    case .currentTerminal, .standardIO:
+      attachConnection.startIO(
+        stdin: .standardInput, stdout: .standardOutput, stderr: .standardError,
+        observer: configuration.stdioObserver)
+    case .custom(let stdin, let stdout, let stderr, _):
+      attachConnection.startCustomIO(
+        stdin: stdin, stdout: stdout, stderr: stderr, observer: configuration.stdioObserver)
     }
 
     // Initial resize for TTY
