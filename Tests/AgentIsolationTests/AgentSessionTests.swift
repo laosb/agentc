@@ -1,11 +1,42 @@
 import AgentIsolation
 import Foundation
+import Synchronization
 import Testing
 
 // MARK: - Tests
 
 @Suite("AgentSession")
 struct AgentSessionTests {
+  @Test("Stdio observation preserves the selected session I/O mode", arguments: [false, true])
+  func observesStdio(allocateTTY: Bool) async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("agentc-io-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let input = Mutex(Data())
+    let output = Mutex(Data())
+    let config = IsolationConfig(
+      image: "test:latest", profileHomeDir: directory.appendingPathComponent("home"),
+      workspace: directory, configurationsDir: directory, configurations: [],
+      allocateTTY: allocateTTY,
+      stdioObserver: StdioObserver(
+        stdin: { data in input.withLock { $0.append(data) } },
+        stdout: { data in output.withLock { $0.append(data) } }))
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    let container = try #require(runtime.lastContainerConfiguration)
+    switch container.io {
+    case .currentTerminal: #expect(allocateTTY)
+    case .standardIO: #expect(!allocateTTY)
+    case .custom: Issue.record("Observation must not switch the session to custom I/O")
+    }
+    let observer = try #require(container.stdioObserver)
+    observer.stdin(Data("request".utf8))
+    observer.stdout(Data("response".utf8))
+    #expect(input.withLock { $0 } == Data("request".utf8))
+    #expect(output.withLock { $0 } == Data("response".utf8))
+    _ = try await session.wait()
+  }
+
   @Test("Prepares runtime before running container")
   func preparesRuntime() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))

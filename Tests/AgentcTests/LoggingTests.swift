@@ -8,22 +8,24 @@ struct LoggingTests {
   @Test(
     "Logging options work across commands and positions",
     arguments: [
-      ["--log-file", "agent.log", "run", "--verbose"],
-      ["run", "--log-file", "agent.log", "--verbose"],
-      ["--verbose", "sh", "--log-file", "agent.log"],
+      ["--log-file", "agent.log", "run", "--verbose", "--stdio-log-file", "stdio.log"],
+      ["run", "--log-file", "agent.log", "--verbose", "--stdio-log-file", "stdio.log"],
+      ["--verbose", "sh", "--log-file", "agent.log", "--stdio-log-file", "stdio.log"],
       ["init", "--log-file", "agent.log", "--verbose"],
       ["profiles", "--log-file", "agent.log", "list", "--verbose"],
       ["profiles", "remove", "--log-file", "agent.log", "--verbose", "missing"],
       ["images", "list", "--log-file", "agent.log", "--verbose"],
       ["version", "--log-file", "agent.log", "--verbose"],
       ["migrate-from-claudec", "--log-file", "agent.log", "--verbose"],
-      ["--log-file", "agent.log", "--verbose"],
+      ["--log-file", "agent.log", "--verbose", "--stdio-log-file", "stdio.log"],
     ])
   func parsing(arguments: [String]) throws {
     let command = try AgentcCommand.parseAsRoot(arguments)
     let logged = try #require(command as? any LoggedCommand)
     #expect(logged.logging.logFile == "agent.log")
     #expect(logged.logging.verbose)
+    if let run = command as? RunCommand { #expect(run.options.stdioLogFile == "stdio.log") }
+    if let shell = command as? ShellCommand { #expect(shell.options.stdioLogFile == "stdio.log") }
   }
 
   @Test("Entrypoint logging flags remain workload arguments")
@@ -81,7 +83,7 @@ struct LoggingTests {
   @Test(
     "Unusable log destinations fail before command work",
     arguments: [
-      "--log-file",
+      "--log-file", "--stdio-log-file",
     ])
   func invalidDestination(option: String) throws {
     let directory = try temporaryLogDirectory()
@@ -103,6 +105,7 @@ struct LoggingTests {
       at: configurations.appendingPathComponent(".git"), withIntermediateDirectories: true)
     try Data().write(to: configurations.appendingPathComponent(".agentc-last-pull"))
     let log = directory.appendingPathComponent("agent.log")
+    let transcript = directory.appendingPathComponent("stdio.log")
     var arguments = [
       "run", "--runtime", "docker", "--docker-endpoint",
       directory.appendingPathComponent("missing.sock").path,
@@ -110,7 +113,7 @@ struct LoggingTests {
       "--configurations-dir", configurations.path, "--configurations-update-interval", "86400",
       "--profile-dir", directory.appendingPathComponent("profile").path, "--workspace",
       directory.path,
-      "--log-file", log.path,
+      "--log-file", log.path, "--stdio-log-file", transcript.path,
     ]
     if verbose { arguments.append("--verbose") }
     let result = try runCLI(arguments)
@@ -120,6 +123,7 @@ struct LoggingTests {
     let contents = try String(contentsOf: log, encoding: .utf8)
     #expect(contents.contains("timing phase=cli.configurations_repo") == verbose)
     #expect(contents.contains("debug agentc:") == verbose)
+    #expect(try Data(contentsOf: transcript).isEmpty)
   }
 
   @Test("Log files reject stdout, devices, directories, and invalid paths")

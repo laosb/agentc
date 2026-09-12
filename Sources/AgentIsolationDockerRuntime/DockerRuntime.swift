@@ -299,9 +299,12 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
 
       switch configuration.io {
       case .currentTerminal, .standardIO:
-        conn.startIO(stdin: .standardInput, stdout: .standardOutput, stderr: .standardError)
+        conn.startIO(
+          stdin: .standardInput, stdout: .standardOutput, stderr: .standardError,
+          observer: configuration.stdioObserver)
       case .custom(let stdin, let stdout, let stderr, _):
-        conn.startCustomIO(stdin: stdin, stdout: stdout, stderr: stderr)
+        conn.startCustomIO(
+          stdin: stdin, stdout: stdout, stderr: stderr, observer: configuration.stdioObserver)
       }
       attachConnection = conn
     } catch {

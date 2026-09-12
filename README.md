@@ -152,7 +152,19 @@ and configuration setup output, to a file instead:
 agentc run --verbose --log-file agentc.log -- "summarize this project"
 ```
 
-Log files are appended to across runs; their parent directories must already exist.
+For protocol diagnostics, `--stdio-log-file <file>` on `run`, `sh`, or `init`
+records session traffic with `stdin:` and `stdout:` prefixes while forwarding the
+original bytes unchanged. It works independently of `--verbose` and `--log-file`:
+
+```sh
+agentc run --log-file agentc.log --stdio-log-file stdio.log
+```
+
+Both files are appended to across runs; their parent directories must already
+exist. Transcript lines are written as they complete, and final unterminated
+lines are flushed when the session ends. Lines longer than 64 KiB are recorded in
+fragments. Stderr stays in the diagnostic stream; in interactive TTY sessions,
+the terminal's combined guest output is recorded as `stdout:`.
 
 ## Development
 

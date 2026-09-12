@@ -358,6 +358,16 @@
             containerConfig.process.stdout = ContainerizationWriter(stdout)
             containerConfig.process.stderr = ContainerizationWriter(stderr)
           }
+          if let observer = configuration.stdioObserver {
+            if let stdin = containerConfig.process.stdin {
+              containerConfig.process.stdin = ObservedContainerizationReader(
+                reader: stdin, observe: observer.stdin)
+            }
+            if let stdout = containerConfig.process.stdout {
+              containerConfig.process.stdout = ObservedContainerizationWriter(
+                writer: stdout, observe: observer.stdout)
+            }
+          }
         }
       } catch {
         // Nothing was created, so there is no VM to stop — just take the session's

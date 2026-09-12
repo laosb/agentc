@@ -31,4 +31,38 @@
     }
   }
 
+  /// Wrap the already-configured streams, including Terminal, so observation
+  /// leaves raw mode, resize handling, and EOF ownership with Containerization.
+  struct ObservedContainerizationReader: Containerization.ReaderStream {
+    let reader: any Containerization.ReaderStream
+    let observe: @Sendable (Data) -> Void
+
+    func stream() -> AsyncStream<Data> {
+      let input = reader.stream()
+      return AsyncStream { continuation in
+        let task = Task {
+          for await data in input {
+            guard !Task.isCancelled else { break }
+            observe(data)
+            continuation.yield(data)
+          }
+          continuation.finish()
+        }
+        continuation.onTermination = { _ in task.cancel() }
+      }
+    }
+  }
+
+  struct ObservedContainerizationWriter: Containerization.Writer {
+    let writer: any Containerization.Writer
+    let observe: @Sendable (Data) -> Void
+
+    func write(_ data: Data) throws {
+      observe(data)
+      try writer.write(data)
+    }
+
+    func close() throws { try writer.close() }
+  }
+
 #endif

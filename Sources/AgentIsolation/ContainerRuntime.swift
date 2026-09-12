@@ -144,6 +144,8 @@ public struct ContainerConfiguration: Sendable {
   public var environment: [String: String]
   public var mounts: [Mount]
   public var io: IO
+  /// Optional callbacks for the bytes forwarded through stdin and stdout.
+  public var stdioObserver: StdioObserver?
   /// Number of CPUs to allocate to the container.
   public var cpuCount: Int
   /// Memory limit for the container in mebibytes (MiB).
@@ -156,6 +158,7 @@ public struct ContainerConfiguration: Sendable {
     environment: [String: String] = [:],
     mounts: [Mount] = [],
     io: IO = .currentTerminal,
+    stdioObserver: StdioObserver? = nil,
     cpuCount: Int = 1,
     memoryLimitMiB: Int = 1536
   ) {
@@ -165,6 +168,7 @@ public struct ContainerConfiguration: Sendable {
     self.environment = environment
     self.mounts = mounts
     self.io = io
+    self.stdioObserver = stdioObserver
     self.cpuCount = cpuCount
     self.memoryLimitMiB = memoryLimitMiB
   }

@@ -133,6 +133,9 @@ public struct IsolationConfig: Sendable {
   /// ``ContainerRuntimeConfiguration/diagnostics``. `nil` (the default) records nothing.
   public var diagnostics: StartupDiagnostics?
 
+  /// Optional observation of session stdin/stdout, without changing terminal mode.
+  public var stdioObserver: StdioObserver?
+
   /// What the resolved bootstrap can take part in.
   ///
   /// Declared alongside the resolved artifact rather than guessed from its path:
@@ -171,6 +174,7 @@ public struct IsolationConfig: Sendable {
     verbose: Bool = false,
     customPTY: Bool = false,
     diagnostics: StartupDiagnostics? = nil,
+    stdioObserver: StdioObserver? = nil,
     bootstrapCapabilities: BootstrapCapabilities = [],
     repairProfileOwnership: Bool = false,
     profileOwnershipFastPathOptIn: Bool = false
@@ -193,6 +197,7 @@ public struct IsolationConfig: Sendable {
     self.verbose = verbose
     self.customPTY = customPTY
     self.diagnostics = diagnostics
+    self.stdioObserver = stdioObserver
     self.bootstrapCapabilities = bootstrapCapabilities
     self.repairProfileOwnership = repairProfileOwnership
     self.profileOwnershipFastPathOptIn = profileOwnershipFastPathOptIn

@@ -33,6 +33,9 @@ enum SessionRunner {
     arguments: [String],
     entrypoint: [String]? = nil
   ) async throws -> Int32 {
+    let stdioLog = try options.stdioLogFile.map { try StdioLog(path: $0) }
+    defer { stdioLog?.finish() }
+
     // Check for legacy claudec data before proceeding
     try MigrationCheck.checkIfNeeded(suppress: options.suppressMigrationFromClaudec)
 
@@ -95,6 +98,7 @@ enum SessionRunner {
       additionalHostMounts: options.resolveAdditionalMounts(projectSettings: projectSettings),
       verbose: options.verbose,
       diagnostics: diagnostics,
+      stdioObserver: stdioLog?.observer,
       bootstrapCapabilities: bootstrap.capabilities,
       repairProfileOwnership: options.repairProfileOwnership,
       profileOwnershipFastPathOptIn: options.profileOwnershipFastPath

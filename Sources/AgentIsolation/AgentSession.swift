@@ -497,6 +497,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       environment: environment,
       mounts: mounts,
       io: io,
+      stdioObserver: config.stdioObserver,
       cpuCount: config.cpuCount,
       memoryLimitMiB: config.memoryLimitMiB
     )

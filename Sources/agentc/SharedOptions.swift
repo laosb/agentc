@@ -32,6 +32,13 @@ extension MountPathScheme: ExpressibleByArgument {}
 struct SharedOptions: ParsableArguments {
   @OptionGroup var logging: LoggingOptions
 
+  @Option(
+    name: .long,
+    help: ArgumentHelp(
+      "Append session stdin and stdout to a file with stdin: and stdout: prefixes.", valueName: "file"),
+    completion: .file())
+  var stdioLogFile: String?
+
   @Option(name: .shortAndLong, help: "Container runtime.")
   var runtime: RuntimeChoice?
 

@@ -39,6 +39,7 @@ private struct AttachState: ~Copyable, @unchecked Sendable {
   var writerTask: Task<Void, Never>?
   var demuxBuffer = Data()
   var isReadDone = false
+  var isStopped = false
   var readDoneContinuation: CheckedContinuation<Void, Never>?
 }
 
@@ -51,7 +52,7 @@ final class DockerStreamAttach: Sendable {
   private let tty: Bool
   private let state = Mutex(AttachState())
 
-  private init(fd: Int32, tty: Bool) {
+  init(fd: Int32, tty: Bool) {
     self.fd = fd
     self.tty = tty
   }
@@ -87,25 +88,24 @@ final class DockerStreamAttach: Sendable {
   // MARK: - I/O
 
   /// Start bidirectional I/O between the socket and file descriptors.
-  func startIO(stdin stdinFD: FileDescriptor, stdout stdoutFD: FileDescriptor, stderr stderrFD: FileDescriptor)
-  {
+  func startIO(
+    stdin stdinFD: FileDescriptor, stdout stdoutFD: FileDescriptor, stderr stderrFD: FileDescriptor,
+    observer: StdioObserver? = nil
+  ) {
     // Socket -> stdout/stderr
     let socketReadSource = DispatchSource.makeReadSource(
       fileDescriptor: fd, queue: DispatchQueue.global(qos: .userInteractive))
     socketReadSource.setEventHandler { [weak self] in
       guard let self = self else { return }
-      var buffer = [UInt8](repeating: 0, count: 32768)
-      let bytesRead = read(self.fd, &buffer, buffer.count)
-      if bytesRead <= 0 {
-        socketReadSource.cancel()
-        return
+      let ended = Self.readAvailable(from: self.fd, bufferSize: 32768) { data in
+        if self.tty {
+          observer?.stdout(data)
+          data.withUnsafeBytes { _ = try? stdoutFD.writeAll($0) }
+        } else {
+          self.demuxWrite(data, stdout: stdoutFD, stderr: stderrFD, observer: observer)
+        }
       }
-      let data = Data(buffer[0..<bytesRead])
-      if self.tty {
-        data.withUnsafeBytes { _ = try? stdoutFD.write($0) }
-      } else {
-        self.demuxWrite(data, stdout: stdoutFD, stderr: stderrFD)
-      }
+      if ended { socketReadSource.cancel() }
     }
     socketReadSource.setCancelHandler { [weak self] in
       guard let self = self else { return }
@@ -127,14 +127,13 @@ final class DockerStreamAttach: Sendable {
       queue: DispatchQueue.global(qos: .userInteractive))
     stdinReadSource.setEventHandler { [weak self] in
       guard let self = self else { return }
-      var buffer = [UInt8](repeating: 0, count: 4096)
-      let bytesRead = read(stdinFD.rawValue, &buffer, buffer.count)
-      if bytesRead <= 0 {
-        stdinReadSource.cancel()
-        return
+      let ended = Self.readAvailable(from: stdinFD.rawValue, bufferSize: 4096) { data in
+        observer?.stdin(data)
+        data.withUnsafeBytes { _ = try? FileDescriptor(rawValue: self.fd).writeAll($0) }
       }
-      _ = buffer.withUnsafeBufferPointer { ptr in
-        write(self.fd, ptr.baseAddress!, bytesRead)
+      if ended {
+        stdinReadSource.cancel()
+        self.closeStdinHalf()
       }
     }
     stdinReadSource.setCancelHandler { [weak self] in
@@ -168,10 +167,9 @@ final class DockerStreamAttach: Sendable {
   /// write half. Once we do, Docker closes its side and our read loop
   /// observes EOF, so ``waitForReadCompletion()`` can return.
   func closeStdinHalf() {
-    #if canImport(Darwin) || canImport(Glibc) || canImport(Musl)
-      _ = shutdown(fd, Int32(SHUT_WR))
-    #endif
     state.withLock { state in
+      guard !state.isStopped else { return }
+      _ = shutdown(fd, Int32(SHUT_WR))
       state.writerTask?.cancel()
       state.writerTask = nil
     }
@@ -179,7 +177,9 @@ final class DockerStreamAttach: Sendable {
 
   /// Stop the I/O and close the socket.
   func stop() {
-    state.withLock { state in
+    let shouldClose = state.withLock { state -> Bool in
+      guard !state.isStopped else { return false }
+      state.isStopped = true
       state.readSource?.cancel()
       state.readSource = nil
       state.writeSource?.cancel()
@@ -191,8 +191,9 @@ final class DockerStreamAttach: Sendable {
         state.readDoneContinuation?.resume()
         state.readDoneContinuation = nil
       }
+      return true
     }
-    close(fd)
+    if shouldClose { close(fd) }
   }
 
   /// Start bidirectional I/O between the socket and custom Reader/Writer streams.
@@ -200,24 +201,24 @@ final class DockerStreamAttach: Sendable {
   /// Unlike ``startIO(stdin:stdout:stderr:)``, this method accepts protocol-based
   /// streams instead of `FileDescriptor` values, allowing callers to capture or
   /// transform container output.
-  func startCustomIO(stdin: any ReaderStream, stdout: any Writer, stderr: any Writer) {
+  func startCustomIO(
+    stdin: any ReaderStream, stdout: any Writer, stderr: any Writer,
+    observer: StdioObserver? = nil
+  ) {
     // Socket → Writers
     let socketReadSource = DispatchSource.makeReadSource(
       fileDescriptor: fd, queue: DispatchQueue.global(qos: .userInteractive))
     socketReadSource.setEventHandler { [weak self] in
       guard let self = self else { return }
-      var buffer = [UInt8](repeating: 0, count: 32768)
-      let bytesRead = read(self.fd, &buffer, buffer.count)
-      if bytesRead <= 0 {
-        socketReadSource.cancel()
-        return
+      let ended = Self.readAvailable(from: self.fd, bufferSize: 32768) { data in
+        if self.tty {
+          observer?.stdout(data)
+          try? stdout.write(data)
+        } else {
+          self.demuxWriteToWriters(data, stdout: stdout, stderr: stderr, observer: observer)
+        }
       }
-      let data = Data(buffer[0..<bytesRead])
-      if self.tty {
-        try? stdout.write(data)
-      } else {
-        self.demuxWriteToWriters(data, stdout: stdout, stderr: stderr)
-      }
+      if ended { socketReadSource.cancel() }
     }
     socketReadSource.setCancelHandler { [weak self] in
       guard let self = self else { return }
@@ -240,22 +241,48 @@ final class DockerStreamAttach: Sendable {
       for await data in stdinStream {
         guard !Task.isCancelled else { break }
         guard !data.isEmpty else { continue }
-        let bytes = [UInt8](data)
-        _ = bytes.withUnsafeBufferPointer { ptr in
-          write(socketFd, ptr.baseAddress!, bytes.count)
-        }
+        observer?.stdin(data)
+        data.withUnsafeBytes { _ = try? FileDescriptor(rawValue: socketFd).writeAll($0) }
       }
+      if !Task.isCancelled { _ = shutdown(socketFd, Int32(SHUT_WR)) }
     }
     self.state.withLock { $0.writerTask = writerTask }
   }
 
   // MARK: - Multiplexed Stream Demuxing
 
+  /// Drain a readiness event, including EOF after its last bytes. Dispatch may
+  /// coalesce those into one event; waiting for another can strand an ACP peer
+  /// waiting for input EOF or keep output completion pending forever. Polling
+  /// avoids blocking on a still-open stream without changing its descriptor flags.
+  private static func readAvailable(
+    from descriptor: Int32, bufferSize: Int, consume: (Data) -> Void
+  ) -> Bool {
+    var buffer = [UInt8](repeating: 0, count: bufferSize)
+    repeat {
+      let count = read(descriptor, &buffer, buffer.count)
+      if count < 0 && errno == EINTR { continue }
+      if count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) { return false }
+      guard count > 0 else { return true }
+      consume(Data(buffer.prefix(count)))
+    } while isReadable(descriptor)
+    return false
+  }
+
+  private static func isReadable(_ descriptor: Int32) -> Bool {
+    var event = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+    var result: Int32
+    repeat { result = poll(&event, 1, 0) } while result < 0 && errno == EINTR
+    return result > 0 && event.revents & Int16(POLLIN | POLLHUP | POLLERR) != 0
+  }
+
   /// Process multiplexed Docker stream data (non-TTY mode).
   ///
   /// Each frame has an 8-byte header: [type:1][padding:3][size:4_be]
   /// Type: 0=stdin, 1=stdout, 2=stderr
-  private func demuxWrite(_ data: Data, stdout: FileDescriptor, stderr: FileDescriptor) {
+  private func demuxWrite(
+    _ data: Data, stdout: FileDescriptor, stderr: FileDescriptor, observer: StdioObserver?
+  ) {
     state.withLock { state in
       state.demuxBuffer.append(data)
 
@@ -270,9 +297,10 @@ final class DockerStreamAttach: Sendable {
         let payload = state.demuxBuffer[8..<(8 + size)]
         switch streamType {
         case 1:
-          Data(payload).withUnsafeBytes { _ = try? stdout.write($0) }
+          observer?.stdout(Data(payload))
+          Data(payload).withUnsafeBytes { _ = try? stdout.writeAll($0) }
         case 2:
-          Data(payload).withUnsafeBytes { _ = try? stderr.write($0) }
+          Data(payload).withUnsafeBytes { _ = try? stderr.writeAll($0) }
         default:
           break
         }
@@ -283,7 +311,9 @@ final class DockerStreamAttach: Sendable {
   }
 
   /// Process multiplexed Docker stream data, routing payloads to custom `Writer` instances.
-  private func demuxWriteToWriters(_ data: Data, stdout: any Writer, stderr: any Writer) {
+  private func demuxWriteToWriters(
+    _ data: Data, stdout: any Writer, stderr: any Writer, observer: StdioObserver?
+  ) {
     state.withLock { state in
       state.demuxBuffer.append(data)
 
@@ -298,6 +328,7 @@ final class DockerStreamAttach: Sendable {
         let payload = state.demuxBuffer[8..<(8 + size)]
         switch streamType {
         case 1:
+          observer?.stdout(Data(payload))
           try? stdout.write(Data(payload))
         case 2:
           try? stderr.write(Data(payload))
