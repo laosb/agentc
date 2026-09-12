@@ -20,6 +20,17 @@
 
   @Suite("Docker stdio observation")
   struct DockerStreamLoggingTests {
+    @Test("Non-TTY containers keep output attached after stdin EOF")
+    func stdinOnce() throws {
+      let request = DockerRuntime.makeCreateRequest(
+        imageRef: "alpine:latest",
+        configuration: ContainerConfiguration(entrypoint: ["cat"], io: .standardIO))
+      let json = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
+      // Docker otherwise detaches stdout/stderr when the client's stdin ends.
+      #expect(json["StdinOnce"] as? Bool == true)
+    }
+
     @Test("Descriptor I/O preserves traffic, EOF, and stderr separation", arguments: [false, true])
     func descriptorIO(tty: Bool) async throws {
       let (attach, peer) = try connection(tty: tty)
@@ -42,7 +53,9 @@
         stdout: FileDescriptor(rawValue: stdout.fileHandleForWriting.fileDescriptor),
         stderr: FileDescriptor(rawValue: stderr.fileHandleForWriting.fileDescriptor),
         observer: StdioObserver(stdin: observedInput.write, stdout: observedOutput.write))
-      let received = try await Task.detached { try readToEOF(peer) }.value
+      let received = try await Task {
+        try readInput(peer, count: input.count, tty: tty)
+      }.value
       #expect(received == input)
       #expect(observedInput.data == input)
 
@@ -77,7 +90,9 @@
       attach.startCustomIO(
         stdin: InputStream(inner: stdin.stream), stdout: stdout, stderr: stderr,
         observer: StdioObserver(stdin: observedInput.write, stdout: observedOutput.write))
-      let received = try await Task.detached { try readToEOF(peer) }.value
+      let received = try await Task {
+        try readInput(peer, count: input.count, tty: tty)
+      }.value
       #expect(received == input)
       #expect(observedInput.data == input)
       try sendOutput(output, diagnostic: diagnostic, tty: tty, peer: peer)
@@ -133,6 +148,25 @@
       if count == 0 { return result }
       result.append(contentsOf: buffer.prefix(count))
     }
+  }
+
+  private func readInput(_ fd: Int32, count: Int, tty: Bool) throws -> Data {
+    guard tty else { return try readToEOF(fd) }
+    var result = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while result.count < count {
+      let received = read(fd, &buffer, min(buffer.count, count - result.count))
+      if received < 0 && errno == EINTR { continue }
+      try #require(received > 0, "TTY input ended before its payload arrived")
+      result.append(contentsOf: buffer.prefix(received))
+    }
+    // For a TTY, Docker detaches output on a socket half-close even with
+    // StdinOnce enabled. Input EOF must leave the connection open for output.
+    var event = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+    var ready: Int32
+    repeat { ready = poll(&event, 1, 100) } while ready < 0 && errno == EINTR
+    #expect(ready == 0, "TTY attach was half-closed when local stdin ended")
+    return result
   }
 
   private func sendOutput(_ output: Data, diagnostic: Data, tty: Bool, peer: Int32) throws {

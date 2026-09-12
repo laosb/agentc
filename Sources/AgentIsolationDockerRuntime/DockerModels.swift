@@ -60,6 +60,7 @@ struct DockerCreateContainerRequest: Codable, Sendable {
   var WorkingDir: String?
   var Tty: Bool?
   var OpenStdin: Bool?
+  var StdinOnce: Bool?
   var AttachStdin: Bool?
   var AttachStdout: Bool?
   var AttachStderr: Bool?

@@ -539,8 +539,8 @@
       return DockerRuntime(config: config)
     }
 
-    @Test("custom IO captures stdout")
-    func capturesStdout() async throws {
+    @Test("custom IO captures stdout after empty stdin", arguments: [false, true])
+    func capturesStdout(isTerminal: Bool) async throws {
       let runtime = makeRuntime()
       defer { Task { try? await runtime.shutdown() } }
       try await runtime.prepare()
@@ -549,7 +549,9 @@
       let stdout = MockWriter()
       let config = ContainerConfiguration(
         entrypoint: ["echo", "hello from custom io"],
-        io: .custom(stdin: EmptyReaderStream(), stdout: stdout, stderr: MockWriter())
+        io: .custom(
+          stdin: EmptyReaderStream(), stdout: stdout, stderr: MockWriter(),
+          isTerminal: isTerminal)
       )
 
       let container = try await runtime.runContainer(
@@ -694,7 +696,7 @@
       #expect(String(data: output, encoding: .utf8)?.contains("hello") == true)
     }
 
-    @Test("custom IO sends stdin to container")
+    @Test("custom IO sends stdin and EOF to container")
     func sendsStdin() async throws {
       let runtime = makeRuntime()
       defer { Task { try? await runtime.shutdown() } }
@@ -704,7 +706,8 @@
       let stdout = MockWriter()
       let stdinData = Data("hello".utf8)
       let config = ContainerConfiguration(
-        entrypoint: ["head", "-c", "5"],
+        // cat must see stdin EOF to exit. Bound a regression inside the guest.
+        entrypoint: ["timeout", "5", "cat"],
         io: .custom(
           stdin: DataReaderStream(data: stdinData), stdout: stdout, stderr: MockWriter())
       )

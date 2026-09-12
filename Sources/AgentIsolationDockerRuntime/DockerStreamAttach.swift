@@ -133,7 +133,7 @@ final class DockerStreamAttach: Sendable {
       }
       if ended {
         stdinReadSource.cancel()
-        self.closeStdinHalf()
+        if !self.tty { self.closeStdinHalf() }
       }
     }
     stdinReadSource.setCancelHandler { [weak self] in
@@ -161,11 +161,10 @@ final class DockerStreamAttach: Sendable {
 
   /// Half-close the write side of the attach socket.
   ///
-  /// Signals to Docker that the client has no more stdin to send. Docker
-  /// normally keeps a TTY attach connection open while `AttachStdin=true`
-  /// even after the container process exits, waiting for us to close the
-  /// write half. Once we do, Docker closes its side and our read loop
-  /// observes EOF, so ``waitForReadCompletion()`` can return.
+  /// With `StdinOnce=true`, non-TTY containers receive stdin EOF while their
+  /// output remains attached. For TTY containers Docker instead detaches the
+  /// output streams, so callers must wait until the container exits before
+  /// half-closing, even when local stdin has already ended.
   func closeStdinHalf() {
     state.withLock { state in
       guard !state.isStopped else { return }
@@ -237,14 +236,14 @@ final class DockerStreamAttach: Sendable {
     // ReaderStream → socket
     let socketFd = self.fd
     let stdinStream = stdin.stream()
-    let writerTask = Task {
+    let writerTask = Task { [weak self] in
       for await data in stdinStream {
         guard !Task.isCancelled else { break }
         guard !data.isEmpty else { continue }
         observer?.stdin(data)
         data.withUnsafeBytes { _ = try? FileDescriptor(rawValue: socketFd).writeAll($0) }
       }
-      if !Task.isCancelled { _ = shutdown(socketFd, Int32(SHUT_WR)) }
+      if !Task.isCancelled, let self, !self.tty { self.closeStdinHalf() }
     }
     self.state.withLock { $0.writerTask = writerTask }
   }

@@ -249,6 +249,8 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
       WorkingDir: configuration.workingDirectory,
       Tty: Self.usesTTY(for: configuration.io),
       OpenStdin: true,
+      // Without StdinOnce, Docker detaches stdout/stderr on client stdin EOF.
+      StdinOnce: true,
       AttachStdin: true,
       AttachStdout: true,
       AttachStderr: true,
