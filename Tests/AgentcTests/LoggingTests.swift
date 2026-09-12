@@ -144,18 +144,29 @@ func temporaryLogDirectory() throws -> URL {
   return url
 }
 
+private final class LoggingTestBundle: NSObject {}
+
 private func runCLI(_ arguments: [String]) throws -> (status: Int32, stdout: String, stderr: String)
 {
-  var directory = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
-  // macOS test executables may sit inside an xctest bundle.
+  #if os(macOS)
+    // XCTest loads our tests into its own runner, whose argv[0] is outside
+    // the build directory. Locate the loaded test bundle instead.
+    var directory = Bundle(for: LoggingTestBundle.self).bundleURL
+  #else
+    var directory = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+  #endif
   while !FileManager.default.isExecutableFile(
     atPath: directory.appendingPathComponent("agentc").path),
     directory.path != "/"
   {
     directory.deleteLastPathComponent()
   }
+  let executable = directory.appendingPathComponent("agentc")
+  try #require(
+    FileManager.default.isExecutableFile(atPath: executable.path),
+    "Could not locate the built agentc executable near the test bundle")
   let process = Process()
-  process.executableURL = directory.appendingPathComponent("agentc")
+  process.executableURL = executable
   process.arguments = arguments
   process.standardInput = FileHandle.nullDevice
   let stdout = Pipe()
