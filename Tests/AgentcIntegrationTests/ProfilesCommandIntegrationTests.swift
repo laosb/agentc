@@ -106,7 +106,8 @@ struct ProfilesCommandIntegrationTests {
     let result = await runAgentc(
       args: ["profiles", "remove", "--profiles-dir", storage.path, "alice"])
     expectSuccess(result)
-    #expect(result.stdout.contains("removed profile \"alice\""))
+    #expect(result.stderr.contains("removed profile \"alice\""))
+    #expect(result.stdout.isEmpty)
 
     #expect(!FileManager.default.fileExists(atPath: storage.appendingPathComponent("alice").path))
     #expect(FileManager.default.fileExists(atPath: storage.appendingPathComponent("bob").path))

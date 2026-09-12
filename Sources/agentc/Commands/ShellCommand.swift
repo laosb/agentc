@@ -14,7 +14,8 @@ import ArgumentParser
   import Musl
 #endif
 
-struct ShellCommand: AsyncParsableCommand {
+struct ShellCommand: AsyncParsableCommand, LoggedCommand {
+  var logging: LoggingOptions { options.logging }
   static let configuration = CommandConfiguration(
     commandName: "sh",
     abstract: "Open a shell or run a command inside the container",

@@ -7,7 +7,8 @@ import ArgumentParser
   import Foundation
 #endif
 
-struct ProfilesCommand: AsyncParsableCommand {
+struct ProfilesCommand: AsyncParsableCommand, LoggedCommand {
+  @OptionGroup var logging: LoggingOptions
   static let configuration = CommandConfiguration(
     commandName: "profiles",
     abstract: "List, inspect, and remove agentc profiles",
@@ -62,10 +63,12 @@ extension ProfilesCommand {
 
 // MARK: - list
 
-struct ProfilesListCommand: AsyncParsableCommand {
+struct ProfilesListCommand: AsyncParsableCommand, LoggedCommand {
+  @OptionGroup var logging: LoggingOptions
   static let configuration = CommandConfiguration(
     commandName: "list",
-    abstract: "List profiles in the profiles storage folder"
+    abstract: "List profiles in the profiles storage folder",
+    discussion: "Use --verbose to include profile paths, disk usage, and modification times."
   )
 
   @Option(
@@ -74,8 +77,7 @@ struct ProfilesListCommand: AsyncParsableCommand {
   )
   var profilesDir: String?
 
-  @Flag(name: .long, help: "Print detailed information for each profile.")
-  var verbose: Bool = false
+  var verbose: Bool { logging.verbose }
 
   @Argument(help: "Optional profile name to inspect.  When set, prints just that profile's details.")
   var name: String?
@@ -124,7 +126,8 @@ struct ProfilesListCommand: AsyncParsableCommand {
 
 // MARK: - remove / rm
 
-struct ProfilesRemoveCommand: AsyncParsableCommand {
+struct ProfilesRemoveCommand: AsyncParsableCommand, LoggedCommand {
+  @OptionGroup var logging: LoggingOptions
   static let configuration = CommandConfiguration(
     commandName: "remove",
     abstract: "Delete a profile and all of its data",
@@ -145,7 +148,7 @@ struct ProfilesRemoveCommand: AsyncParsableCommand {
 
   mutating func run() async throws {
     guard !names.isEmpty else {
-      writeToStderr("agentc: profiles remove: at least one profile name is required.\n")
+      logger.error("profiles remove: at least one profile name is required.")
       throw ExitCode(2)
     }
 
@@ -156,15 +159,15 @@ struct ProfilesRemoveCommand: AsyncParsableCommand {
     for name in names {
       do {
         try manager.delete(name: name)
-        print("agentc: removed profile \"\(name)\"")
+        logger.info("removed profile \"\(name)\"")
       } catch ProfileManagerError.profileNotFound {
         if force {
           continue
         }
-        writeToStderr("agentc: profile \"\(name)\" does not exist in \(storage.path).\n")
+        logger.error("profile \"\(name)\" does not exist in \(storage.path).")
         failed = true
       } catch ProfileManagerError.invalidProfileName(let raw) {
-        writeToStderr("agentc: invalid profile name \"\(raw)\".\n")
+        logger.error("invalid profile name \"\(raw)\".")
         failed = true
       }
     }

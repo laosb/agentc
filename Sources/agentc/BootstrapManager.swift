@@ -117,7 +117,7 @@ enum BootstrapManager {
       "https://github.com/laosb/agentc/releases/download/v\(version)/\(assetName)"
 
     if verbose {
-      writeToStderr("agentc: downloading bootstrap binary...\n")
+      logger.debug("Downloading bootstrap binary...")
     }
 
     let tmpDir = FileManager.default.temporaryDirectory
@@ -166,7 +166,7 @@ enum BootstrapManager {
     writeDescriptor(for: destination, version: version)
 
     if verbose {
-      writeToStderr("agentc: bootstrap binary installed to \(destination.path)\n")
+      logger.debug("Bootstrap binary installed to \(destination.path)")
     }
   }
 }

@@ -116,9 +116,9 @@ struct MigrationIntegrationTests {
       env: ["HOME": fakeHome.path]
     )
     expectSuccess(result)
-    #expect(result.stdout.contains("Successfully migrated"))
-    #expect(result.stdout.contains("profiles"))
-    #expect(result.stdout.contains("configurations"))
+    #expect(result.stderr.contains("Successfully migrated"))
+    #expect(result.stderr.contains("profiles"))
+    #expect(result.stderr.contains("configurations"))
 
     // Verify data was copied to .agentc
     let newProfileSentinel = fakeHome.appendingPathComponent(
@@ -162,7 +162,8 @@ struct MigrationIntegrationTests {
       env: ["HOME": fakeHome.path]
     )
     expectSuccess(result)
-    #expect(result.stdout.contains("Nothing to migrate"))
+    #expect(result.stderr.contains("Nothing to migrate"))
+    #expect(result.stdout.isEmpty)
   }
 
   @Test("migrate-from-claudec with existing ~/.agentc")
@@ -185,6 +186,7 @@ struct MigrationIntegrationTests {
       env: ["HOME": fakeHome.path]
     )
     expectSuccess(result)
-    #expect(result.stdout.contains("already exists"))
+    #expect(result.stderr.contains("already exists"))
+    #expect(result.stdout.isEmpty)
   }
 }

@@ -33,12 +33,12 @@
   } catch {
     Diagnostics.record(
       phase: "bootstrap.total", startedAt: bootstrapStartedAt, outcome: "failure")
-    fputs("agentc-bootstrap: \(error)\n", stderr)
+    bootstrapLogger.error("\(error)")
     exit(1)
   }
 
   // ConfigurationRunner.run always ends with exec (replacing the process).
   // If we reach here, something went wrong.
-  fputs("agentc-bootstrap: unexpected return from configuration runner\n", stderr)
+  bootstrapLogger.error("Unexpected return from configuration runner")
   exit(1)
 #endif

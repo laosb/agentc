@@ -14,7 +14,8 @@ import ArgumentParser
   import Foundation
 #endif
 
-struct ImagesCommand: AsyncParsableCommand {
+struct ImagesCommand: AsyncParsableCommand, LoggedCommand {
+  @OptionGroup var logging: LoggingOptions
   static let configuration = CommandConfiguration(
     commandName: "images",
     abstract: "List, inspect, and remove locally stored container images",
@@ -61,7 +62,8 @@ struct ImageRuntimeOptions: ParsableArguments {
   }
 }
 
-struct ImagesListCommand: AsyncParsableCommand {
+struct ImagesListCommand: AsyncParsableCommand, LoggedCommand {
+  @OptionGroup var logging: LoggingOptions
   static let configuration = CommandConfiguration(
     commandName: "list", abstract: "List images", aliases: ["ls"])
   @OptionGroup var options: ImageRuntimeOptions
@@ -79,7 +81,8 @@ struct ImagesListCommand: AsyncParsableCommand {
   }
 }
 
-struct ImagesInspectCommand: AsyncParsableCommand {
+struct ImagesInspectCommand: AsyncParsableCommand, LoggedCommand {
+  @OptionGroup var logging: LoggingOptions
   static let configuration = CommandConfiguration(
     commandName: "inspect", abstract: "Inspect an image")
   @OptionGroup var options: ImageRuntimeOptions
@@ -101,7 +104,8 @@ struct ImagesInspectCommand: AsyncParsableCommand {
   }
 }
 
-struct ImagesRemoveCommand: AsyncParsableCommand {
+struct ImagesRemoveCommand: AsyncParsableCommand, LoggedCommand {
+  @OptionGroup var logging: LoggingOptions
   static let configuration = CommandConfiguration(
     commandName: "remove", abstract: "Remove one or more images", aliases: ["rm"])
   @OptionGroup var options: ImageRuntimeOptions
@@ -114,7 +118,7 @@ struct ImagesRemoveCommand: AsyncParsableCommand {
     try await options.withRuntime { runtime in
       for reference in references {
         try await runtime.removeManagedImage(ref: reference)
-        print("agentc: removed image \"\(reference)\"")
+        logger.info("removed image \"\(reference)\"")
       }
     }
   }

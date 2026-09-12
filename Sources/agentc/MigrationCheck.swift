@@ -60,12 +60,12 @@ enum MigrationCheck {
 
     // Migration needed
     let message = """
-      agentc: Found existing ~/.claudec directory from the legacy claudec CLI.
+      Found existing ~/.claudec directory from the legacy claudec CLI.
       Run `agentc migrate-from-claudec` to migrate your profiles and configurations.
       Or use `--suppress-migration-from-claudec` to skip this check.
 
       """
-    writeToStderr(message)
+    logger.error("\(message)")
     throw ExitCode(1)
   }
 }

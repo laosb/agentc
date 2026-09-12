@@ -6,7 +6,8 @@ import ArgumentParser
   import Foundation
 #endif
 
-struct MigrateFromClaudecCommand: ParsableCommand {
+struct MigrateFromClaudecCommand: ParsableCommand, LoggedCommand {
+  @OptionGroup var logging: LoggingOptions
   static let configuration = CommandConfiguration(
     commandName: "migrate-from-claudec",
     abstract: "Migrate data from the legacy ~/.claudec directory to ~/.agentc"
@@ -18,12 +19,12 @@ struct MigrateFromClaudecCommand: ParsableCommand {
     let dst = MigrationCheck.agentcDir
 
     guard fm.fileExists(atPath: src.path) else {
-      print("agentc: No ~/.claudec directory found. Nothing to migrate.")
+      logger.info("No ~/.claudec directory found. Nothing to migrate.")
       return
     }
 
     if fm.fileExists(atPath: dst.path) {
-      print("agentc: ~/.agentc already exists. Migration is not needed.")
+      logger.info("~/.agentc already exists. Migration is not needed.")
       return
     }
 
@@ -54,9 +55,9 @@ struct MigrateFromClaudecCommand: ParsableCommand {
     }
 
     if migrated.isEmpty {
-      print("agentc: ~/.claudec exists but contains no profiles or configurations to migrate.")
+      logger.info("~/.claudec exists but contains no profiles or configurations to migrate.")
     } else {
-      print("agentc: Successfully migrated \(migrated.joined(separator: ", ")) to ~/.agentc/")
+      logger.info("Successfully migrated \(migrated.joined(separator: ", ")) to ~/.agentc/")
     }
     print()
     print("The original ~/.claudec directory was not modified.")

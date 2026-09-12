@@ -43,7 +43,7 @@ enum ToolkitManager {
     if let override, !override.isEmpty {
       let directory = URL(fileURLWithPath: override)
       guard FileManager.default.fileExists(atPath: directory.path) else {
-        writeToStderr("agentc: --toolkit \(override) does not exist; continuing without it\n")
+        logger.warning("--toolkit \(override) does not exist; continuing without it")
         return nil
       }
       return directory
@@ -62,9 +62,8 @@ enum ToolkitManager {
     } catch {
       // Worth saying out loud even without --verbose: tools the configurations
       // expect to find may not be there.
-      writeToStderr(
-        "agentc: could not install the toolkit (\(error)); "
-          + "continuing with the tools the image provides\n")
+      logger.warning(
+        "Could not install the toolkit (\(error)); continuing with the tools the image provides")
       return nil
     }
   }
@@ -83,7 +82,7 @@ enum ToolkitManager {
       "https://github.com/laosb/agentc/releases/download/toolkit-v\(version)/\(assetName)"
 
     if verbose {
-      writeToStderr("agentc: downloading toolkit v\(version)...\n")
+      logger.debug("Downloading toolkit v\(version)...")
     }
 
     let tmpDir = FileManager.default.temporaryDirectory
@@ -135,7 +134,7 @@ enum ToolkitManager {
     }
 
     if verbose {
-      writeToStderr("agentc: toolkit installed to \(destination.path)\n")
+      logger.debug("Toolkit installed to \(destination.path)")
     }
   }
 }

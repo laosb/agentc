@@ -30,6 +30,8 @@ struct EnvironmentVariableOption: ExpressibleByArgument, Sendable, Equatable {
 extension MountPathScheme: ExpressibleByArgument {}
 
 struct SharedOptions: ParsableArguments {
+  @OptionGroup var logging: LoggingOptions
+
   @Option(name: .shortAndLong, help: "Container runtime.")
   var runtime: RuntimeChoice?
 
@@ -189,8 +191,7 @@ struct SharedOptions: ParsableArguments {
   @Flag(name: .long, help: "Skip the migration check for legacy ~/.claudec data.")
   var suppressMigrationFromClaudec: Bool = false
 
-  @Flag(name: .shortAndLong, help: "Print extra information (image pulls, bootstrap setup, etc.).")
-  var verbose: Bool = false
+  var verbose: Bool { logging.verbose }
 
   @Option(name: .customLong("agentc-folder"), help: "Custom project settings folder path.")
   var agentcFolder: String?

@@ -59,7 +59,7 @@ enum ConfigurationsManager {
       if FileManager.default.fileExists(atPath: dir.path) {
         try FileManager.default.removeItem(at: dir)
       }
-      writeToStderr("agentc: cloning configurations repo...\n")
+      logger.info("Cloning configurations repo...")
       let result = try await run(
         .path("/usr/bin/git"),
         arguments: ["clone", "--depth", "1", repo, dir.path],

@@ -56,9 +56,7 @@
         let prepareScript = "\(configDir)/prepare.sh"
         if access(prepareScript, F_OK) == 0 {
           if Helpers.envVar("AGENTC_VERBOSE") == "1" {
-            fputs(
-              "==> Running prepare.sh for configuration '\(configName)'...\n",
-              stderr)
+            bootstrapLogger.debug("==> Running prepare.sh for configuration '\(configName)'...")
           }
           try Diagnostics.span(
             "bootstrap.prepare_script", attributes: [("configuration", configName)]

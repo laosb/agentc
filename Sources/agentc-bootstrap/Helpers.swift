@@ -170,7 +170,7 @@
     /// Does not return on success.
     static func execReplace(command: [String]) -> Never {
       guard !command.isEmpty else {
-        fputs("agentc-bootstrap: exec failed: empty command\n", stderr)
+        bootstrapLogger.error("exec failed: empty command")
         _exit(127)
       }
 
@@ -182,7 +182,7 @@
 
       // execvp only returns on failure.
       let err = String(cString: strerror(errno))
-      fputs("agentc-bootstrap: exec \(command[0]): \(err)\n", stderr)
+      bootstrapLogger.error("exec \(command[0]): \(err)")
       _exit(127)
     }
   }

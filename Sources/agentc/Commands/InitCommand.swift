@@ -7,7 +7,8 @@ import ArgumentParser
   import Foundation
 #endif
 
-struct InitCommand: AsyncParsableCommand {
+struct InitCommand: AsyncParsableCommand, LoggedCommand {
+  var logging: LoggingOptions { options.logging }
   static let configuration = CommandConfiguration(
     commandName: "init",
     abstract: "Initialize agentc project settings and container environment",
@@ -48,15 +49,14 @@ struct InitCommand: AsyncParsableCommand {
     // Step 1: Create .agentc/settings.json
     if !skipProjectSettings {
       try createProjectSettings(in: targetDir)
-      print(
-        "agentc: Created \(targetDir.appendingPathComponent(".agentc/settings.json").path)")
+      logger.info("Created \(targetDir.appendingPathComponent(".agentc/settings.json").path)")
     }
 
     // Step 2: Container initialization — run through the full bootstrap so that
     // configurations are loaded and prepare.sh scripts execute, then exit
     // immediately via a trivial entrypoint.
     if !skipContainerInit {
-      print("agentc: Initializing container environment...")
+      logger.info("Initializing container environment...")
       do {
         let exitCode = try await SessionRunner.run(
           options: options,
@@ -66,13 +66,12 @@ struct InitCommand: AsyncParsableCommand {
           entrypoint: ["/bin/sh", "-c", "true"]
         )
         if exitCode == 0 {
-          print("agentc: Container environment initialized successfully.")
+          logger.info("Container environment initialized successfully.")
         } else {
-          print("agentc: Warning: container initialization exited with code \(exitCode).")
+          logger.warning("Container initialization exited with code \(exitCode).")
         }
       } catch {
-        print(
-          "agentc: Warning: container initialization failed: \(error.localizedDescription)")
+        logger.warning("Container initialization failed: \(error.localizedDescription)")
       }
     }
 

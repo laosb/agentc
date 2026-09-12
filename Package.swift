@@ -92,7 +92,11 @@ let package = Package(
     ),
     .executableTarget(
       name: "agentc-bootstrap",
-      dependencies: []
+      dependencies: [.product(name: "Logging", package: "swift-log")]
+    ),
+    .testTarget(
+      name: "AgentcTests",
+      dependencies: ["agentc"]
     ),
     .testTarget(
       name: "AgentIsolationTests",

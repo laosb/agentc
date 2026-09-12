@@ -322,13 +322,13 @@ for image in "${IMAGES[@]}"; do
 
       # Diagnostics must never reach the workload's stdout. A stray record here
       # is a bug in the instrumentation, not a benchmark artifact.
-      if grep -q '^agentc: timing ' "$out_file"; then
+      if grep -q 'agentc: timing ' "$out_file"; then
         echo "FAIL: timing diagnostics contaminated stdout in $out_file" >&2
         exit 1
       fi
 
       if [[ "$VERBOSE" -eq 1 ]]; then
-        grep '^agentc: timing ' "$err_file" >> "$OUT_DIR/$case_id.timings.txt" || true
+        grep 'agentc: timing ' "$err_file" >> "$OUT_DIR/$case_id.timings.txt" || true
       else
         rm -f "$err_file"
       fi

@@ -14,7 +14,8 @@ import ArgumentParser
   import Musl
 #endif
 
-struct RunCommand: AsyncParsableCommand {
+struct RunCommand: AsyncParsableCommand, LoggedCommand {
+  var logging: LoggingOptions { options.logging }
   static let configuration = CommandConfiguration(
     commandName: "run",
     abstract: "Run an agent in an isolated container",

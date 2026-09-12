@@ -46,7 +46,8 @@
 
       let remove = await runAgentc(args: ["images", "remove", imageReference] + common)
       expectSuccess(remove)
-      #expect(remove.stdout.contains("removed image"))
+      #expect(remove.stderr.contains("removed image"))
+      #expect(remove.stdout.isEmpty)
 
       let missing = await runAgentc(args: ["images", "inspect", imageReference] + common)
       #expect(missing.exitCode != 0)

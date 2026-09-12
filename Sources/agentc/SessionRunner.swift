@@ -36,11 +36,10 @@ enum SessionRunner {
     // Check for legacy claudec data before proceeding
     try MigrationCheck.checkIfNeeded(suppress: options.suppressMigrationFromClaudec)
 
-    // Diagnostics go to stderr only, so they can never land in output the agent's
-    // caller is parsing. Non-verbose runs record nothing at all.
+    // Use the same stderr-only backend as CLI and dependency logs.
     let diagnostics: StartupDiagnostics? =
       options.verbose
-      ? StartupDiagnostics(emit: StartupDiagnostics.stderrSink(write: { writeToStderr($0) }))
+      ? StartupDiagnostics(emit: { logger.debug("\(StartupDiagnostics.format($0))") })
       : nil
 
     let projectSettings = options.loadProjectSettings()
@@ -126,8 +125,7 @@ enum SessionRunner {
       endpoint: options.dockerEndpoint,
       ociRuntime: options.resolveDockerRuntime(projectSettings: projectSettings),
       warningHandler: { message in
-        // stderr, so the warning never lands in output the agent's caller is parsing.
-        writeToStderr("\nagentc: \(message)\n\n")
+        logger.warning("\(message)")
       },
       diagnostics: diagnostics,
       rootfsCacheEnabled: !options.noRootfsCache)
@@ -170,7 +168,7 @@ enum SessionRunner {
       let newImage = try? await runtime.pullImage(ref: config.image)
       if let oldImage, let newImage, oldImage.digest != newImage.digest {
         if options.verbose {
-          writeToStderr("agentc: loaded newer image for \(config.image)\n")
+          logger.debug("Loaded newer image for \(config.image)")
         }
         if !options.keepOldImage {
           try? await runtime.removeImage(digest: oldImage.digest)

@@ -1,6 +1,7 @@
 import ArgumentParser
 
-struct VersionCommand: ParsableCommand {
+struct VersionCommand: ParsableCommand, LoggedCommand {
+  @OptionGroup var logging: LoggingOptions
   static let configuration = CommandConfiguration(
     commandName: "version",
     abstract: "Print the agentc version"

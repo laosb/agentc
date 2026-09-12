@@ -572,10 +572,8 @@
         appKernelExists
         || FileManager.default.fileExists(atPath: existingCachedKernel.path)
       let action = isUpgrade ? "upgrading to" : "installing"
-      fputs(
-        "agentc: \(action) Apple Containers default kernel "
-          + "(Kata \(AppleContainerDefaultKernel.kataVersion))...\n",
-        stderr)
+      Logger(label: "agentc.apple-container").info(
+        "\(action) Apple Containers default kernel (Kata \(AppleContainerDefaultKernel.kataVersion))...")
       let tarURL = URL(string: AppleContainerDefaultKernel.archiveURL)!
 
       let (tempFile, response) = try await URLSession.shared.download(from: tarURL)

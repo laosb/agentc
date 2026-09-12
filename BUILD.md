@@ -39,13 +39,13 @@ swift build \
 
 ## Tests
 
-Run the runtime-independent and Docker unit tests with:
+Run the CLI, runtime-independent, and Docker unit tests with:
 
 ```sh
 swift test \
   --disable-default-traits \
   --traits ContainerRuntimeDocker \
-  --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests'
+  --filter 'AgentcTests|AgentIsolationTests|AgentIsolationDockerRuntimeTests'
 ```
 
 The rootfs-cache tests do not need Containerization and run on Linux too, but only

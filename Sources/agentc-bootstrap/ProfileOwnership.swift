@@ -94,9 +94,8 @@
       guard decision == "continue" else {
         // The host is taking over: it will stop this container, so nothing here
         // may run. Report why, then stop.
-        fputs(
-          "agentc-bootstrap: profile ownership not settled (\(report.status)); "
-            + "the host is handling it\n", stderr)
+        bootstrapLogger.warning(
+          "Profile ownership not settled (\(report.status)); the host is handling it")
         exit(75)
       }
     }
@@ -397,7 +396,7 @@
         // Best-effort, as before: a profile that cannot be fully repaired should
         // not stop the session outright, but it must be visible.
         outcome = "failure"
-        fputs("agentc-bootstrap: profile ownership repair incomplete: \(error)\n", stderr)
+        bootstrapLogger.error("Profile ownership repair incomplete: \(error)")
       }
       Diagnostics.record(
         phase: "bootstrap.profile_ownership", startedAt: start, outcome: outcome,

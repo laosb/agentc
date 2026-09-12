@@ -47,7 +47,7 @@
       for (name, value) in attributes {
         line += " \(sanitizeName(name))=\(escape(value))"
       }
-      fputs(line + "\n", stderr)
+      bootstrapLogger.debug("\(line)")
     }
 
     /// Measure a throwing phase, recording `failure` before rethrowing.

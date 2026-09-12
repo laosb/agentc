@@ -143,6 +143,17 @@ agentc run -- "summarize this project" > summary.txt
 
 This allows you to use agentc to run stdio-based MCP or ACP. Automatic TTY behavior is preserved for interactive sessions.
 
+Logging uses [apple/swift-log](https://github.com/apple/swift-log), with stderr as
+the default destination. Add `--verbose` (or `-v`) for debug logs and startup timings.
+Use `--log-file <file>` to append logs and stderr, including container bootstrap
+and configuration setup output, to a file instead:
+
+```sh
+agentc run --verbose --log-file agentc.log -- "summarize this project"
+```
+
+Log files are appended to across runs; their parent directories must already exist.
+
 ## Development
 
 Building agentc, running tests, creating static Linux binaries, and building `agentc-bootstrap` are documented in [BUILD.md](./BUILD.md).
