@@ -679,6 +679,75 @@ struct AgentSessionProfileOwnershipTests {
     _ = try await session.wait()
   }
 
+  @Test("A mapping that presents ownership per caller tells the bootstrap not to repair")
+  func presentedByMountSkipsRepair() async throws {
+    let profile = try TempProfile()
+    let runtime = OwnershipMockRuntime(config: .init(storagePath: "/tmp"))
+    runtime.mapping = ProfileOwnershipMapping(
+      identity: "mock", isCharacterized: true, presentsOwnershipPerCaller: true)
+
+    // Even with the handshake available and opted into: there is nothing to verify.
+    let session = AgentSession(config: makeConfig(profile, optIn: true), runtime: runtime)
+    try await session.start()
+
+    #expect(runtime.launches == 1)
+    #expect(runtime.controlDirectories.isEmpty)
+    #expect(makeCoordinator(profile).loadRecord() == nil)
+    let environment = try #require(runtime.environments.first)
+    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.presentedByMount] == "1")
+    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.protocolVersion] == nil)
+    _ = try await session.wait()
+  }
+
+  @Test("An explicit repair request overrides a mount that presents ownership")
+  func explicitRepairIgnoresPresentedByMount() async throws {
+    let profile = try TempProfile()
+    let runtime = OwnershipMockRuntime(config: .init(storagePath: "/tmp"))
+    runtime.mapping = ProfileOwnershipMapping(
+      identity: "mock", isCharacterized: true, presentsOwnershipPerCaller: true)
+    runtime.scriptedReports = [
+      ProfileOwnershipReport(status: .repaired, uid: 1000, gid: 1000)
+    ]
+
+    let session = AgentSession(config: makeConfig(profile, repair: true), runtime: runtime)
+    try await session.start()
+
+    let environment = try #require(runtime.environments.first)
+    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.presentedByMount] == nil)
+    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.mode] == "repair")
+    _ = try await session.wait()
+  }
+
+  @Test("Other mappings never send the presented-by-mount hint")
+  func noHintByDefault() async throws {
+    let profile = try TempProfile()
+    let runtime = OwnershipMockRuntime(config: .init(storagePath: "/tmp"))
+    runtime.mapping = ProfileOwnershipMapping(identity: "mock", isCharacterized: false)
+
+    let session = AgentSession(config: makeConfig(profile), runtime: runtime)
+    try await session.start()
+
+    let environment = try #require(runtime.environments.first)
+    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.presentedByMount] == nil)
+    _ = try await session.wait()
+  }
+
+  @Test("A caller cannot forge the presented-by-mount hint")
+  func hintCannotBeForged() async throws {
+    let profile = try TempProfile()
+    let runtime = OwnershipMockRuntime(config: .init(storagePath: "/tmp"))
+    runtime.mapping = ProfileOwnershipMapping(identity: "mock", isCharacterized: false)
+
+    var config = makeConfig(profile)
+    config.environment[ProfileOwnershipProtocol.EnvironmentKey.presentedByMount] = "1"
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+
+    let environment = try #require(runtime.environments.first)
+    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.presentedByMount] == nil)
+    _ = try await session.wait()
+  }
+
   @Test("The control directory is mounted read-write at the reserved destination")
   func controlMountDestination() async throws {
     let profile = try TempProfile()
@@ -734,6 +803,9 @@ struct ProfileOwnershipWireFormatTests {
     #expect(ProfileOwnershipProtocol.EnvironmentKey.mode == "AGENTC_OWNERSHIP_MODE")
     #expect(ProfileOwnershipProtocol.EnvironmentKey.expectedUID == "AGENTC_OWNERSHIP_EXPECT_UID")
     #expect(ProfileOwnershipProtocol.EnvironmentKey.expectedGID == "AGENTC_OWNERSHIP_EXPECT_GID")
+    #expect(
+      ProfileOwnershipProtocol.EnvironmentKey.presentedByMount
+        == "AGENTC_OWNERSHIP_PRESENTED_BY_MOUNT")
   }
 
   @Test("Every control key sits in the reserved AGENTC_ namespace")
@@ -744,6 +816,7 @@ struct ProfileOwnershipWireFormatTests {
       ProfileOwnershipProtocol.EnvironmentKey.mode,
       ProfileOwnershipProtocol.EnvironmentKey.expectedUID,
       ProfileOwnershipProtocol.EnvironmentKey.expectedGID,
+      ProfileOwnershipProtocol.EnvironmentKey.presentedByMount,
     ]
     // The session strips user-supplied `AGENTC_*` values, so a caller cannot
     // forge any of these.

@@ -45,6 +45,10 @@ public enum ProfileOwnershipProtocol {
     public static let mode = "AGENTC_OWNERSHIP_MODE"
     public static let expectedUID = "AGENTC_OWNERSHIP_EXPECT_UID"
     public static let expectedGID = "AGENTC_OWNERSHIP_EXPECT_GID"
+    /// Set to `1` when the runtime's share presents ownership per caller, so the
+    /// bootstrap creates what is missing but never attempts a chown. Independent
+    /// of the handshake: a bootstrap that does not know it simply repairs.
+    public static let presentedByMount = "AGENTC_OWNERSHIP_PRESENTED_BY_MOUNT"
   }
 }
 
@@ -112,9 +116,20 @@ public struct ProfileOwnershipMapping: Sendable, Equatable {
   /// would let a record claim a profile is fine when it is not.
   public var isCharacterized: Bool
 
-  public init(identity: String, isCharacterized: Bool) {
+  /// Whether the share reports each caller as the owner of every file.
+  ///
+  /// Apple's virtiofs share does: the agent user sees its home as its own, while
+  /// root sees a different owner and is refused any chown. There is nothing to
+  /// repair and nothing a record could cache, so the session skips both and tells
+  /// the bootstrap not to try.
+  public var presentsOwnershipPerCaller: Bool
+
+  public init(
+    identity: String, isCharacterized: Bool, presentsOwnershipPerCaller: Bool = false
+  ) {
     self.identity = identity
     self.isCharacterized = isCharacterized
+    self.presentsOwnershipPerCaller = presentsOwnershipPerCaller
   }
 }
 

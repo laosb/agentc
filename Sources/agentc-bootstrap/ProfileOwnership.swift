@@ -41,6 +41,7 @@
       static let modeKey = "AGENTC_OWNERSHIP_MODE"
       static let expectedUIDKey = "AGENTC_OWNERSHIP_EXPECT_UID"
       static let expectedGIDKey = "AGENTC_OWNERSHIP_EXPECT_GID"
+      static let presentedByMountKey = "AGENTC_OWNERSHIP_PRESENTED_BY_MOUNT"
       /// How long the guest waits to be released before giving up.
       static let acknowledgementTimeoutSeconds = 120.0
     }
@@ -76,6 +77,14 @@
     static func settle() throws {
       guard let identity = resolveAgentIdentity() else {
         throw BootstrapError.setupFailed("agent user missing after creation")
+      }
+
+      // The host knows its share reports every caller as the owner, so there is
+      // nothing to chown — only directories to create.
+      if Helpers.envVar(Wire.presentedByMountKey) == "1",
+        settlePresentedByMount(identity: identity)
+      {
+        return
       }
 
       guard Helpers.envVar(Wire.protocolVersionKey) == String(Wire.version),
@@ -224,9 +233,13 @@
     /// Create a file as the agent user, write to it, and delete it again.
     ///
     /// Runs in a forked child so the bootstrap itself keeps its privileges.
-    static func writeProbeFailure(identity: (uid: uid_t, gid: gid_t)) -> String? {
-      let path = "\(homePath)/.agentc-write-probe"
-      unlink(path)
+    static func writeProbeFailure(
+      identity: (uid: uid_t, gid: gid_t), home: String = homePath
+    ) -> String? {
+      // Sessions sharing a profile probe the same home concurrently, and every
+      // container's bootstrap has much the same PID, so each probe gets a name of
+      // its own rather than clearing and recreating a shared one.
+      let path = "\(home)/.agentc-write-probe-\(UUID().uuidString)"
 
       let child = fork()
       if child == 0 {
@@ -249,7 +262,7 @@
         _exit(0)
       }
       guard child > 0 else {
-        return "cannot fork to probe \(homePath): \(String(cString: strerror(errno)))"
+        return "cannot fork to probe \(home): \(String(cString: strerror(errno)))"
       }
 
       var status: Int32 = 0
@@ -261,11 +274,38 @@
       unlink(path)
       switch code {
       case 11, 12: return "cannot become the agent user in this container"
-      case 13: return "the agent user cannot create files in \(homePath)"
-      case 14: return "the agent user cannot write in \(homePath)"
-      case 15: return "the agent user cannot delete files in \(homePath)"
-      default: return "the write probe in \(homePath) failed (exit \(code))"
+      case 13: return "the agent user cannot create files in \(home)"
+      case 14: return "the agent user cannot write in \(home)"
+      case 15: return "the agent user cannot delete files in \(home)"
+      default: return "the write probe in \(home) failed (exit \(code))"
       }
+    }
+
+    /// Whether the agent user sees `path` as a directory it owns.
+    ///
+    /// Root's view is not always the one that matters. Apple's virtiofs share
+    /// reports each caller as the owner of every shared file, so root sees a
+    /// mismatch it is not allowed to chown away while the agent user already
+    /// sees exactly the ownership a repair would have produced.
+    ///
+    /// Runs in a forked child so the bootstrap itself keeps its privileges.
+    static func agentSeesOwnership(of path: String, identity: (uid: uid_t, gid: gid_t)) -> Bool {
+      // Only async-signal-safe calls after the fork: build the C string first.
+      let cPath = Array(path.utf8CString)
+      let child = fork()
+      if child == 0 {
+        if setgid(identity.gid) != 0 { _exit(11) }
+        if setuid(identity.uid) != 0 { _exit(12) }
+        var info = stat()
+        let found = cPath.withUnsafeBufferPointer { lstat($0.baseAddress!, &info) } == 0
+        guard found, (info.st_mode & S_IFMT) == S_IFDIR else { _exit(13) }
+        _exit(info.st_uid == identity.uid && info.st_gid == identity.gid ? 0 : 14)
+      }
+      guard child > 0 else { return false }
+
+      var status: Int32 = 0
+      waitpid(child, &status, 0)
+      return (status & 0x7f) == 0 && (status >> 8) & 0xff == 0
     }
 
     // MARK: - Repair
@@ -275,8 +315,9 @@
       let gid = UInt32(identity.gid)
 
       // The home has to exist and be ours before anything else can look at it.
+      let home: DirectoryOwnership
       do {
-        try ensureHomeDirectory(identity: identity)
+        home = try ensureHomeDirectory(identity: identity)
       } catch {
         return Report(
           status: Status.failed, uid: uid, gid: gid, visited: 0, changed: 0,
@@ -291,6 +332,27 @@
           return Report(
             status: Status.initialized, uid: uid, gid: gid, visited: created, changed: created,
             detail: nil)
+        } catch {
+          return Report(
+            status: Status.failed, uid: uid, gid: gid, visited: 0, changed: 0,
+            detail: "\(error)")
+        }
+      }
+
+      // Root cannot change ownership on this mount, and every entry below the
+      // home would refuse it the same way. The agent user already sees the home
+      // as its own, so prove it can use it instead of walking.
+      if home == .presentedByMount {
+        do {
+          let created = try createMissingManagedDirectories(identity: identity)
+          if let failure = writeProbeFailure(identity: identity) {
+            return Report(
+              status: Status.failed, uid: uid, gid: gid, visited: created, changed: created,
+              detail: failure)
+          }
+          return Report(
+            status: Status.repaired, uid: uid, gid: gid, visited: created, changed: created,
+            detail: "ownership is presented by the mount")
         } catch {
           return Report(
             status: Status.failed, uid: uid, gid: gid, visited: 0, changed: 0,
@@ -340,25 +402,38 @@
     /// Only called while repairing. Verification deliberately does *not* do this:
     /// a home with the wrong owner means the record no longer describes this
     /// profile, and quietly fixing it would hide that from the host.
-    static func ensureHomeDirectory(identity: (uid: uid_t, gid: gid_t)) throws {
+    @discardableResult
+    static func ensureHomeDirectory(identity: (uid: uid_t, gid: gid_t)) throws
+      -> DirectoryOwnership
+    {
       try ensureOwnedDirectory(at: homePath, identity: identity)
     }
 
-    /// Create a directory if missing and change its owner only when needed.
+    /// How a directory came to belong to the agent user.
+    enum DirectoryOwnership: Equatable {
+      /// Root already saw the agent user as its owner.
+      case unchanged
+      /// A chown gave it to the agent user.
+      case changed
+      /// The mount refused the chown, but already presents the directory to the
+      /// agent user as its own.
+      case presentedByMount
+    }
+
+    /// Create a directory if missing, and return what is there.
     ///
-    /// The ownership operation is injectable so tests can model a shared
-    /// filesystem that rejects even a no-op chown with EPERM.
-    static func ensureOwnedDirectory(
-      at path: String, identity: (uid: uid_t, gid: gid_t),
-      changeOwner: (String, uid_t, gid_t) -> Int32 = { lchown($0, $1, $2) }
-    ) throws {
+    /// Never follows a symlink, and never changes ownership.
+    @discardableResult
+    static func inspectOrCreateDirectory(at path: String) throws -> stat {
       var info = stat()
       if lstat(path, &info) != 0 {
         guard errno == ENOENT else {
           throw BootstrapError.setupFailed(
             "cannot inspect \(path): \(String(cString: strerror(errno)))")
         }
-        guard mkdir(path, 0o700) == 0 else {
+        // Losing a race with another session sharing this profile is fine: the
+        // directory it created is inspected below like any other.
+        guard mkdir(path, 0o700) == 0 || errno == EEXIST else {
           throw BootstrapError.setupFailed(
             "cannot create \(path): \(String(cString: strerror(errno)))")
         }
@@ -372,15 +447,35 @@
       guard (info.st_mode & S_IFMT) == S_IFDIR else {
         throw BootstrapError.setupFailed("\(path) is not a directory")
       }
+      return info
+    }
+
+    /// Create a directory if missing and change its owner only when needed.
+    ///
+    /// The ownership operation and the agent user's view are injectable so tests
+    /// can model a shared filesystem that rejects chown without needing root.
+    @discardableResult
+    static func ensureOwnedDirectory(
+      at path: String, identity: (uid: uid_t, gid: gid_t),
+      changeOwner: (String, uid_t, gid_t) -> Int32 = { lchown($0, $1, $2) },
+      agentView: (String, (uid: uid_t, gid: gid_t)) -> Bool = {
+        agentSeesOwnership(of: $0, identity: $1)
+      }
+    ) throws -> DirectoryOwnership {
+      let info = try inspectOrCreateDirectory(at: path)
 
       // Some shared mounts reject chown even when the requested owner already
       // matches. As in OwnershipWalker, do not make an unnecessary metadata
       // write that would abort the rest of initialization and repair.
-      guard info.st_uid != identity.uid || info.st_gid != identity.gid else { return }
+      guard info.st_uid != identity.uid || info.st_gid != identity.gid else { return .unchanged }
       guard changeOwner(path, identity.uid, identity.gid) == 0 else {
-        throw BootstrapError.setupFailed(
-          "cannot chown \(path): \(String(cString: strerror(errno)))")
+        let reason = String(cString: strerror(errno))
+        // Apple's virtiofs share refuses root's chown but reports each caller as
+        // the owner, so the agent user already has what the chown was for.
+        if agentView(path, identity) { return .presentedByMount }
+        throw BootstrapError.setupFailed("cannot chown \(path): \(reason)")
       }
+      return .changed
     }
 
     /// Create any missing managed directories and give them to the agent user.
@@ -389,23 +484,105 @@
     /// creates gets its ownership assigned here. Returns how many were created,
     /// which is the only thing the fast path ever touches.
     @discardableResult
-    static func createMissingManagedDirectories(identity: (uid: uid_t, gid: gid_t)) throws -> Int {
+    static func createMissingManagedDirectories(
+      identity: (uid: uid_t, gid: gid_t), home: String = homePath,
+      changeOwner: (String, uid_t, gid_t) -> Int32 = { lchown($0, $1, $2) },
+      agentView: (String, (uid: uid_t, gid: gid_t)) -> Bool = {
+        agentSeesOwnership(of: $0, identity: $1)
+      }
+    ) throws -> Int {
       var created = 0
       for directory in managedDirectories {
-        let path = "\(homePath)/\(directory)"
+        let path = "\(home)/\(directory)"
         var existing = stat()
         if lstat(path, &existing) == 0 { continue }
-        try ensureOwnedDirectory(at: path, identity: identity)
+        try ensureOwnedDirectory(
+          at: path, identity: identity, changeOwner: changeOwner, agentView: agentView)
         created += 1
       }
       return created
     }
 
-    /// Initialize the home directory and everything the bootstrap manages in it.
-    @discardableResult
-    static func initializeHome(identity: (uid: uid_t, gid: gid_t)) throws -> Int {
-      try ensureHomeDirectory(identity: identity)
-      return try createMissingManagedDirectories(identity: identity)
+    /// One legacy pass: initialize `home`, then give everything in it to the
+    /// agent user.
+    ///
+    /// Throws when the agent user may be left unable to use its home. Everything
+    /// that depends on the mount is injectable so tests can run a pass against a
+    /// temporary home without root.
+    static func legacyPass(
+      home: String = homePath, identity: (uid: uid_t, gid: gid_t),
+      changeOwner: (String, uid_t, gid_t) -> Int32 = { lchown($0, $1, $2) },
+      agentView: (String, (uid: uid_t, gid: gid_t)) -> Bool = {
+        agentSeesOwnership(of: $0, identity: $1)
+      },
+      writeProbe: (String, (uid: uid_t, gid: gid_t)) -> String? = {
+        writeProbeFailure(identity: $1, home: $0)
+      }
+    ) throws -> (home: DirectoryOwnership, stats: OwnershipWalker.Stats) {
+      // The home first, so a profile whose directory does not exist yet gets
+      // created rather than failing the walk.
+      let ownership = try ensureOwnedDirectory(
+        at: home, identity: identity, changeOwner: changeOwner, agentView: agentView)
+      let created = try createMissingManagedDirectories(
+        identity: identity, home: home, changeOwner: changeOwner, agentView: agentView)
+
+      guard ownership == .presentedByMount else {
+        let stats = try OwnershipWalker.repair(root: home, uid: identity.uid, gid: identity.gid)
+        return (ownership, stats)
+      }
+
+      // Root cannot change ownership on this mount, and every entry below the
+      // home would refuse it the same way, so walking would only turn a usable
+      // profile into a full-tree failure. Prove the agent user can use it instead.
+      if let failure = writeProbe(home, identity) {
+        throw BootstrapError.setupFailed(failure)
+      }
+      return (ownership, OwnershipWalker.Stats(visited: created, changed: created))
+    }
+
+    /// Prepare a home whose mount presents ownership per caller: create what is
+    /// missing and change no ownership at all.
+    ///
+    /// Returns `false`, having created at most the home itself, when the agent
+    /// user does not in fact see the home as its own — the host's description of
+    /// the mount is then wrong, and the caller should repair instead.
+    static func preparePresentedHome(
+      home: String = homePath, identity: (uid: uid_t, gid: gid_t),
+      agentView: (String, (uid: uid_t, gid: gid_t)) -> Bool = {
+        agentSeesOwnership(of: $0, identity: $1)
+      }
+    ) throws -> Bool {
+      try inspectOrCreateDirectory(at: home)
+      guard agentView(home, identity) else { return false }
+      for directory in managedDirectories {
+        try inspectOrCreateDirectory(at: "\(home)/\(directory)")
+      }
+      return true
+    }
+
+    /// What the bootstrap does when the host says the mount presents ownership
+    /// per caller. Returns `false` when it should repair after all.
+    private static func settlePresentedByMount(identity: (uid: uid_t, gid: gid_t)) -> Bool {
+      let start = Diagnostics.now()
+      do {
+        guard try preparePresentedHome(identity: identity) else {
+          bootstrapLogger.warning(
+            """
+            The host reported that \(homePath) is presented to the agent user as its own, \
+            but it is not; repairing ownership instead
+            """)
+          return false
+        }
+      } catch {
+        // Repair creates the same directories and will report the same failure
+        // in its own words.
+        bootstrapLogger.debug("Preparing \(homePath) without repair failed: \(error)")
+        return false
+      }
+      Diagnostics.record(
+        phase: "bootstrap.profile_ownership", startedAt: start,
+        attributes: [("mode", "presented-by-mount"), ("visited", "0"), ("changed", "0")])
+      return true
     }
 
     /// What the bootstrap does when the host does not speak the protocol.
@@ -415,15 +592,17 @@
       let start = Diagnostics.now()
       var visited = 0
       var changed = 0
+      var action = "walked"
       var outcome = "success"
       do {
-        // The home first, so a profile whose directory does not exist yet gets
-        // created rather than failing the walk.
-        try initializeHome(identity: identity)
-        let stats = try OwnershipWalker.repair(
-          root: homePath, uid: identity.uid, gid: identity.gid)
-        visited = stats.visited
-        changed = stats.changed
+        let pass = try legacyPass(identity: identity)
+        visited = pass.stats.visited
+        changed = pass.stats.changed
+        if pass.home == .presentedByMount {
+          action = "presented-by-mount"
+          bootstrapLogger.debug(
+            "\(homePath) refuses ownership changes but is already the agent user's; not walking it")
+        }
       } catch {
         // Best-effort, as before: a profile that cannot be fully repaired should
         // not stop the session outright, but it must be visible.
@@ -433,7 +612,8 @@
       Diagnostics.record(
         phase: "bootstrap.profile_ownership", startedAt: start, outcome: outcome,
         attributes: [
-          ("mode", "legacy"), ("visited", String(visited)), ("changed", String(changed)),
+          ("mode", "legacy"), ("action", action), ("visited", String(visited)),
+          ("changed", String(changed)),
         ])
     }
 

@@ -113,7 +113,8 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
 
     guard let coordinator = makeOwnershipCoordinator() else {
       // Legacy behavior: the bootstrap repairs profile ownership itself on every
-      // start, and nothing waits for a message it cannot produce.
+      // start — unless the mount presents ownership itself — and nothing waits
+      // for a message it cannot produce.
       let launched = try await launch(entrypoint: entrypointOverride, ownership: nil)
       commit(launched, lease: nil)
       return
@@ -133,6 +134,8 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
   /// the old behavior: the bootstrap repairs ownership on every start, which is
   /// slower but makes no assumptions about a mapping nobody has measured.
   private func makeOwnershipCoordinator() -> ProfileOwnershipCoordinator? {
+    // Nothing to verify or repair, so nothing to negotiate.
+    guard !mountPresentsOwnership else { return nil }
     guard config.bootstrapCapabilities.contains(.profileOwnershipHandshake) else { return nil }
     guard let mapping = runtime.profileOwnershipMapping else { return nil }
     guard mapping.isCharacterized || config.profileOwnershipFastPathOptIn else { return nil }
@@ -140,6 +143,17 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       profileDirectory: config.profileHomeDir.deletingLastPathComponent(),
       homeDirectory: config.profileHomeDir,
       mapping: mapping)
+  }
+
+  /// Whether the runtime's share already presents the profile to the agent user
+  /// as its own, so the bootstrap should not attempt to change ownership.
+  ///
+  /// An explicit repair request overrides it: the bootstrap then repairs as it
+  /// would anywhere else, and still stops short of walking a home the mount
+  /// refuses to chown.
+  private var mountPresentsOwnership: Bool {
+    runtime.profileOwnershipMapping?.presentsOwnershipPerCaller == true
+      && !config.repairProfileOwnership
   }
 
   /// Launch, then settle profile ownership with the guest before anything runs.
@@ -459,6 +473,8 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       for (key, value) in ownership.coordinator.guestEnvironment(mode: ownership.mode) {
         environment[key] = value
       }
+    } else if mountPresentsOwnership {
+      environment[ProfileOwnershipProtocol.EnvironmentKey.presentedByMount] = "1"
     }
 
     // When an entrypoint override is provided (e.g. "sh" dispatch), the override

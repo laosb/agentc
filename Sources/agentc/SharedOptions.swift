@@ -176,7 +176,9 @@ struct SharedOptions: ParsableArguments {
 
         On a runtime whose ownership fast path is not enabled, every start already \
         repairs ownership, so this changes nothing beyond taking the profile \
-        exclusively for the duration.
+        exclusively for the duration. Apple Containerization's share presents \
+        every file to the agent user as its own, so starts there skip repair; \
+        this flag makes the bootstrap attempt it anyway.
         """)
   )
   var repairProfileOwnership: Bool = false

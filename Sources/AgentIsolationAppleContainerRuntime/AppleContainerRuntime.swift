@@ -61,14 +61,17 @@
 
     /// How host file ownership presents through Apple's virtiofs share.
     ///
-    /// `isCharacterized` stays `false` until that has been measured on real
-    /// hardware — specifically, whether a guest `chown` on a shared file takes
-    /// effect, and whether it is still in effect for the next session. Until then
-    /// the bootstrap keeps repairing profile ownership on every start rather than
-    /// trusting a record written against an unverified mapping.
+    /// The share reports each caller as the owner of every file: the agent user
+    /// sees `/home/agent` as its own, including files the macOS user created,
+    /// while root sees a different owner and gets EPERM from any chown. So there
+    /// is no ownership to repair, and the bootstrap is told not to try.
+    ///
+    /// `isCharacterized` stays `false`: with nothing to repair, a record would
+    /// cache nothing, and the fast path stays off.
     public var profileOwnershipMapping: ProfileOwnershipMapping? {
       ProfileOwnershipMapping(
-        identity: "apple-container/virtiofs", isCharacterized: false)
+        identity: "apple-container/virtiofs", isCharacterized: false,
+        presentsOwnershipPerCaller: true)
     }
 
     /// Containers this runtime still has state for.
