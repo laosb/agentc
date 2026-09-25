@@ -125,12 +125,18 @@ jobs:
         if: matrix.runtime == 'runsc'
         run: |
           set -euo pipefail
+          # Releases ship as a single tarball: `runsc`, the containerd shim, and a `gvisor-bin/`
+          # of sidecar binaries that runsc expects next to itself (it would otherwise try to
+          # download them at runtime; see gvisor.dev/issue/13718).
           url="https://storage.googleapis.com/gvisor/releases/release/latest/$(uname -m)"
-          wget -q "${url}/runsc" "${url}/runsc.sha512" \
-                  "${url}/containerd-shim-runsc-v1" "${url}/containerd-shim-runsc-v1.sha512"
-          sha512sum -c runsc.sha512 -c containerd-shim-runsc-v1.sha512
-          sudo mv runsc containerd-shim-runsc-v1 /usr/local/bin/
-          sudo chmod a+rx /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1
+          wget -q "${url}/gvisor.tar.bz2" "${url}/gvisor.tar.bz2.sha512"
+          sha512sum -c gvisor.tar.bz2.sha512
+          command -v bzip2 >/dev/null || { sudo apt-get update && sudo apt-get install -y bzip2; }
+          sudo tar -xjf gvisor.tar.bz2 -C /usr/local/bin --no-same-owner \
+            runsc containerd-shim-runsc-v1 gvisor-bin
+          sudo chmod -R a+rX /usr/local/bin/runsc /usr/local/bin/containerd-shim-runsc-v1 \
+            /usr/local/bin/gvisor-bin
+          /usr/local/bin/runsc --version
           # Registers a Docker runtime named `runsc` in /etc/docker/daemon.json.
           sudo /usr/local/bin/runsc install
           sudo systemctl restart docker
