@@ -22,7 +22,7 @@ enum ToolkitManager {
   ///
   /// Toolkit release CI keeps this equal to `TOOLKIT_VERSION` in
   /// `scripts/toolkit/manifest.sh`; `ToolkitManifestTests` catches any drift.
-  static let version = "2"
+  static let version = "3"
 
   /// Where an installed toolkit lives. Each version gets its own directory, so
   /// a downgrade finds its toolkit still in place.
