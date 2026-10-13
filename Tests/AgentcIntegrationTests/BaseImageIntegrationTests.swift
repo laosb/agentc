@@ -127,16 +127,16 @@ struct BaseImageIntegrationTests {
     #expect(result.output.contains("git version"))
   }
 
-  // MARK: - swift:6.3 (UID 1000 already used)
+  // MARK: - swift:6.4.1 (UID 1000 already used)
 
-  @Test("Runs echo on swift:6.3")
+  @Test("Runs echo on swift:6.4.1")
   func swiftEcho() async throws {
     let result = await runAgentc(
       args: [
         "sh",
         "--profile", sharedProfile,
         "--configurations-dir", sharedConfigurationsDir,
-        "--image", "docker.io/library/swift:6.3",
+        "--image", "docker.io/library/swift:6.4.1",
         "--no-update-image",
         "--", "echo", "hello-from-swift",
       ]
@@ -145,9 +145,9 @@ struct BaseImageIntegrationTests {
     #expect(result.stdout.contains("hello-from-swift"))
   }
 
-  @Test("Agent user exists and is functional after bootstrap on swift:6.3 (UID 1000 pre-used)")
+  @Test("Agent user exists and is functional after bootstrap on swift:6.4.1 (UID 1000 pre-used)")
   func swiftAgentUser() async throws {
-    // swift:6.3 is Ubuntu-based and ships with UID 1000 already allocated,
+    // swift:6.4.1 is Ubuntu-based and ships with UID 1000 already allocated,
     // so the bootstrap must assign a different UID to the agent user.
     // We only verify the user is named "agent" — not a specific UID.
     let result = await runAgentc(
@@ -155,7 +155,7 @@ struct BaseImageIntegrationTests {
         "sh",
         "--profile", sharedProfile,
         "--configurations-dir", sharedConfigurationsDir,
-        "--image", "docker.io/library/swift:6.3",
+        "--image", "docker.io/library/swift:6.4.1",
         "--no-update-image",
         "--", "id",
       ]
@@ -164,14 +164,14 @@ struct BaseImageIntegrationTests {
     #expect(result.output.contains("agent"))
   }
 
-  @Test("Commands run as agent user on swift:6.3")
+  @Test("Commands run as agent user on swift:6.4.1")
   func swiftWhoami() async throws {
     let result = await runAgentc(
       args: [
         "sh",
         "--profile", sharedProfile,
         "--configurations-dir", sharedConfigurationsDir,
-        "--image", "docker.io/library/swift:6.3",
+        "--image", "docker.io/library/swift:6.4.1",
         "--no-update-image",
         "--", "whoami",
       ]
@@ -214,14 +214,14 @@ struct BaseImageIntegrationTests {
     #expect(result.stdout.contains("hello-from-bare-debian"))
   }
 
-  @Test("Runs echo on bare swift:6.3 (no docker.io/library/ prefix)")
+  @Test("Runs echo on bare swift:6.4.1 (no docker.io/library/ prefix)")
   func bareSwiftEcho() async throws {
     let result = await runAgentc(
       args: [
         "sh",
         "--profile", sharedProfile,
         "--configurations-dir", sharedConfigurationsDir,
-        "--image", "swift:6.3",
+        "--image", "swift:6.4.1",
         "--no-update-image",
         "--", "echo", "hello-from-bare-swift",
       ]

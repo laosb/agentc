@@ -408,13 +408,7 @@ public struct RootFSCache: Sendable {
   /// process's unpack takes, which can be minutes. Polling with backoff keeps the
   /// wait cancellable and leaves the pool free.
   private func acquireLock(for key: String) async throws -> FileLock {
-    let file = lockFile(for: key)
-    var delay = Duration.milliseconds(2)
-    while true {
-      if let lock = try FileLock.tryAcquire(at: file, mode: .exclusive) { return lock }
-      try await Task.sleep(for: delay)
-      delay = min(delay * 2, .milliseconds(100))
-    }
+    try await FileLock.acquireAsync(at: lockFile(for: key), mode: .exclusive)
   }
 
   private func prepareDirectories() throws {

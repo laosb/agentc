@@ -82,6 +82,18 @@ public final class FileLock: @unchecked Sendable {
     return FileLock(descriptor: descriptor, path: url.path)
   }
 
+  /// Wait without blocking a cooperative executor thread. Uses the same
+  /// interprocess lock as `acquire`, but the backoff remains cancellable.
+  public static func acquireAsync(at url: URL, mode: Mode) async throws -> FileLock {
+    var delay = Duration.milliseconds(2)
+    while true {
+      try Task.checkCancellation()
+      if let lock = try tryAcquire(at: url, mode: mode) { return lock }
+      try await Task.sleep(for: delay)
+      delay = min(delay * 2, .milliseconds(100))
+    }
+  }
+
   /// Acquire a lock only if it is free right now.
   ///
   /// Returns `nil` when another holder has it. Maintenance work uses this so a

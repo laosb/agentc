@@ -100,6 +100,11 @@
       let kernel = try await getOrDownloadKernel()
 
       let store = try managedImageStore()
+      let initfsCache = InitFSCache(imageStorePath: imageStorePath)
+      let initfsPath = try await initfsCache.prepare { destination in
+        let image = try await store.getInitImage(reference: initfsCache.reference)
+        _ = try await image.initBlock(at: destination, for: .linuxArm)
+      }
 
       let network: Network?
       if #available(macOS 26.0, *) {
@@ -108,9 +113,10 @@
         network = nil
       }
 
-      self.manager = try await ContainerManager(
+      self.manager = try ContainerManager(
         kernel: kernel,
-        initfsReference: "ghcr.io/apple/containerization/vminit:0.41.0",
+        initfs: .block(
+          format: "ext4", source: initfsPath.path, destination: "/", options: ["ro"]),
         imageStore: store,
         network: network
       )
@@ -303,15 +309,16 @@
         container = try await manager.create(
           containerID,
           image: resolvedImage,
-          rootfs: rootfsMount
+          rootfs: rootfsMount,
+          // VM sizing is separate from cgroup limits in Containerization 0.50.
+          // Keep `nproc` at the requested CPU count and reserve memory for the
+          // guest kernel and vminitd beyond the container's memory limit.
+          vm: VMResources(
+            cpus: configuration.cpuCount,
+            memoryInBytes: UInt64(configuration.memoryLimitMiB).mib()
+              + VMResources.guestMemoryOverhead)
         ) { containerConfig in
           containerConfig.cpus = configuration.cpuCount
-          // `--cpus N` promises the agent N cores, and `nproc` inside the guest is
-          // what build tools read to size their own parallelism. Containerization
-          // adds a core to the VM on top of the container's share by default, which
-          // would make the guest report N + 1. The container's CPU quota is N either
-          // way; this keeps the count the guest sees honest as well.
-          containerConfig.cpuOverhead = 0
           containerConfig.memoryInBytes = UInt64(configuration.memoryLimitMiB).mib()
 
           containerConfig.hosts = .default
