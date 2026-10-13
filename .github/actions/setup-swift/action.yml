@@ -14,6 +14,8 @@ runs:
       uses: SwiftyLab/setup-swift@latest
       with:
         swift-version: "6.4.1"
+        # Refresh the release catalog; the action's default snapshot predates 6.4.1.
+        check-latest: true
 
     - name: Cache Static Linux SDK
       if: inputs.static-sdk == 'true'
