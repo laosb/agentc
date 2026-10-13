@@ -84,6 +84,21 @@ existing directory owned by the test user whose mount rejects even a same-owner
 `chown` (for example, `/home/agent` inside an Apple Containerization guest). This
 opt-in test attempts only that no-op ownership change and does not create files.
 
+Apple Container's **share root** is different: it reports synthetic `0:0`
+ownership and rejects `chown`, even though a non-root agent can access host-owned
+private files. The Apple runtime selects access-based profile initialization:
+bootstrap creates and probes the managed directories as the image's agent user,
+without changing ownership or permissions. Ownership-record fast-path opt-in is
+not applicable to this runtime.
+
+To test this behavior, mount a **disposable**, writable host directory at
+`/home/agent` in an Apple Container guest, run the Linux bootstrap tests as guest
+root, and set `AGENTC_TEST_APPLE_SHARED_HOME=/home/agent`. Unlike the no-op test
+above, this creates managed directories and temporary write probes. The test
+asserts that mount-root `chown` fails and initialization succeeds twice as a
+non-root UID. The regular Linux tests also check that genuinely inaccessible
+homes and managed directories fail, and that private permissions are preserved.
+
 ## Release-style `agentc` builds
 
 `build.sh` builds the `agentc` executable, selects runtime traits, and copies the result to `./agentc`.

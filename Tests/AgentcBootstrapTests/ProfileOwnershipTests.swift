@@ -12,6 +12,92 @@
   struct BootstrapProfileOwnershipTests {
     private let identity = (uid: getuid(), gid: getgid())
 
+    @Test("Shared homes preserve private contents and initialize managed directories")
+    func accessibleSharedHome() throws {
+      let fixture = try DirectoryFixture()
+      let sentinel = fixture.root.appendingPathComponent(".agentc-write-probe")
+      try Data("keep me".utf8).write(to: sentinel)
+      #expect(chmod(fixture.root.path, 0o700) == 0)
+      #expect(chmod(sentinel.path, 0o600) == 0)
+
+      // Repeated starts must leave contents and permissions intact.
+      try ProfileOwnership.initializeAccessibleHome(at: fixture.root.path)
+      try ProfileOwnership.initializeAccessibleHome(at: fixture.root.path)
+      #expect(try Data(contentsOf: sentinel) == Data("keep me".utf8))
+      for directory in [""] + ProfileOwnership.managedDirectories {
+        let path = directory.isEmpty ? fixture.root.path : "\(fixture.root.path)/\(directory)"
+        var info = stat()
+        #expect(lstat(path, &info) == 0)
+        #expect(info.st_mode & 0o777 == 0o700)
+        #expect(
+          try FileManager.default.contentsOfDirectory(atPath: path)
+            .filter { $0.hasPrefix(".agentc-write-probe-") }.isEmpty)
+      }
+    }
+
+    @Test("Shared home initialization rejects symlinked managed directories")
+    func sharedHomeRejectsSymlink() throws {
+      let fixture = try DirectoryFixture()
+      let outside = try DirectoryFixture()
+      #expect(symlink(outside.root.path, "\(fixture.root.path)/.local") == 0)
+      #expect(throws: BootstrapError.self) {
+        try ProfileOwnership.initializeAccessibleHome(at: fixture.root.path)
+      }
+      #expect(try FileManager.default.contentsOfDirectory(atPath: outside.root.path).isEmpty)
+    }
+
+    @Test("Shared profile access is checked as the non-root agent", .enabled(if: getuid() == 0))
+    func sharedHomeDropsPrivileges() throws {
+      let fixture = try DirectoryFixture()
+      #expect(chmod(fixture.root.path, 0o700) == 0)
+      #expect(throws: BootstrapError.self) {
+        try ProfileOwnership.prepareSharedHome(
+          at: fixture.root.path, identity: (uid: 12345, gid: 12345))
+      }
+      #expect(chown(fixture.root.path, 12345, 12345) == 0)
+      try ProfileOwnership.prepareSharedHome(
+        at: fixture.root.path, identity: (uid: 12345, gid: 12345))
+      #expect(getuid() == 0)
+      // A managed directory that is inaccessible must fail too.
+      #expect(chown("\(fixture.root.path)/.cache", 0, 0) == 0)
+      #expect(throws: BootstrapError.self) {
+        try ProfileOwnership.prepareSharedHome(
+          at: fixture.root.path, identity: (uid: 12345, gid: 12345))
+      }
+    }
+
+    @Test("Shared access honors the agent's supplementary groups", .enabled(if: getuid() == 0))
+    func sharedHomeSupplementaryGroups() throws {
+      let fixture = try DirectoryFixture()
+      #expect(chmod(fixture.root.path, 0o770) == 0)
+      // Only supplementary group 0 grants UID/GID 12345 access to this fixture.
+      try ProfileOwnership.prepareSharedHome(
+        at: fixture.root.path, identity: (uid: 12345, gid: 12345),
+        initializeGroups: { _ in
+          var group: gid_t = 0
+          return setgroups(1, &group)
+        })
+    }
+
+    @Test(
+      "An Apple share with synthetic root ownership is usable as the agent",
+      .enabled(if: Helpers.envVar("AGENTC_TEST_APPLE_SHARED_HOME") != nil)
+    )
+    func appleSharedHome() throws {
+      // Opt-in writable, disposable fixture: unlike realSharedMount this creates
+      // managed directories. Run as guest root with an actual Apple virtiofs share.
+      let path = try #require(Helpers.envVar("AGENTC_TEST_APPLE_SHARED_HOME"))
+      try #require(getuid() == 0)
+      var info = stat()
+      try #require(lstat(path, &info) == 0)
+      try #require(info.st_uid == 0)
+      try #require(lchown(path, 12345, 12345) == -1 && errno == EPERM)
+      try ProfileOwnership.prepareSharedHome(
+        at: path, identity: (uid: 12345, gid: 12345))
+      try ProfileOwnership.prepareSharedHome(
+        at: path, identity: (uid: 12345, gid: 12345))
+    }
+
     @Test(
       "An already-owned shared mount works when a real chown returns EPERM",
       .enabled(if: Helpers.envVar("AGENTC_TEST_UNCHOWNABLE_DIRECTORY") != nil)
@@ -252,43 +338,6 @@
         }
         #expect(failures.isEmpty)
       }
-    }
-
-    @Test("A home the host says the mount presents is prepared without any chown")
-    func preparePresentedHome() throws {
-      let fixture = try DirectoryFixture()
-      let home = fixture.root.appendingPathComponent("home").path
-      // A different agent identity: any chown attempted as this user would fail.
-      let target = (uid: identity.uid + 1, gid: identity.gid + 1)
-      var viewed: [String] = []
-
-      let prepared = try ProfileOwnership.preparePresentedHome(
-        home: home, identity: target,
-        agentView: { path, _ in
-          viewed.append(path)
-          return true
-        })
-
-      #expect(prepared)
-      #expect(viewed == [home])
-      for path in [home] + ProfileOwnership.managedDirectories.map({ "\(home)/\($0)" }) {
-        var info = stat()
-        #expect(lstat(path, &info) == 0)
-        #expect(info.st_mode & S_IFMT == S_IFDIR)
-        #expect(info.st_uid == identity.uid && info.st_gid == identity.gid)
-      }
-    }
-
-    @Test("A home the agent does not see as its own is handed back for repair")
-    func preparePresentedHomeMismatch() throws {
-      let fixture = try DirectoryFixture()
-
-      let prepared = try ProfileOwnership.preparePresentedHome(
-        home: fixture.root.path, identity: identity, agentView: { _, _ in false })
-
-      #expect(!prepared)
-      // Repair creates and assigns the managed directories itself.
-      #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path).isEmpty)
     }
 
     @Test("Wire constants match what the host sends")

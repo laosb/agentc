@@ -116,12 +116,12 @@ public struct ProfileOwnershipMapping: Sendable, Equatable {
   /// would let a record claim a profile is fine when it is not.
   public var isCharacterized: Bool
 
-  /// Whether the share reports each caller as the owner of every file.
+  /// Whether ownership is synthetic and access is authorized by the host share.
   ///
-  /// Apple's virtiofs share does: the agent user sees its home as its own, while
-  /// root sees a different owner and is refused any chown. There is nothing to
-  /// repair and nothing a record could cache, so the session skips both and tells
-  /// the bootstrap not to try.
+  /// Apple's virtiofs descendants present ownership per caller, but the share
+  /// root can report 0:0 even to the agent. Neither is persistent host ownership.
+  /// The session skips ownership repair and records, and tells bootstrap to
+  /// initialize and verify access as the agent user instead.
   public var presentsOwnershipPerCaller: Bool
 
   public init(

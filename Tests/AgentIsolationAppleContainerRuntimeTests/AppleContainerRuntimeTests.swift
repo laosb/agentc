@@ -4,6 +4,12 @@
   import Foundation
   import Testing
 
+  @Test("Apple shares declare host-authorized profile access")
+  func appleSharesDeclareSyntheticOwnership() {
+    let runtime = AppleContainerRuntime(config: .init(storagePath: "/unused"))
+    #expect(runtime.profileOwnershipMapping?.presentsOwnershipPerCaller == true)
+  }
+
   // MARK: - Image Reference Normalization Unit Tests
 
   @Suite("AppleContainerRuntime Image Ref Normalization")

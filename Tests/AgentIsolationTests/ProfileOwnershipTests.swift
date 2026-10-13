@@ -699,23 +699,54 @@ struct AgentSessionProfileOwnershipTests {
     _ = try await session.wait()
   }
 
-  @Test("An explicit repair request overrides a mount that presents ownership")
-  func explicitRepairIgnoresPresentedByMount() async throws {
+  @Test("Explicit repair on a shared mount checks access without an ownership handshake")
+  func explicitRepairRetainsPresentedByMount() async throws {
     let profile = try TempProfile()
     let runtime = OwnershipMockRuntime(config: .init(storagePath: "/tmp"))
     runtime.mapping = ProfileOwnershipMapping(
       identity: "mock", isCharacterized: true, presentsOwnershipPerCaller: true)
-    runtime.scriptedReports = [
-      ProfileOwnershipReport(status: .repaired, uid: 1000, gid: 1000)
-    ]
-
-    let session = AgentSession(config: makeConfig(profile, repair: true), runtime: runtime)
+    let session = AgentSession(
+      config: makeConfig(profile, repair: true, optIn: true), runtime: runtime)
     try await session.start()
 
     let environment = try #require(runtime.environments.first)
-    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.presentedByMount] == nil)
-    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.mode] == "repair")
+    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.presentedByMount] == "1")
+    #expect(environment[ProfileOwnershipProtocol.EnvironmentKey.protocolVersion] == nil)
+    #expect(runtime.controlDirectories.isEmpty)
+    #expect(makeCoordinator(profile).loadRecord() == nil)
     _ = try await session.wait()
+  }
+
+  @Test("Shared-mount repair excludes active sessions and retains its exclusive lease")
+  func sharedMountRepairLease() async throws {
+    let profile = try TempProfile()
+    let mapping = ProfileOwnershipMapping(
+      identity: "mock", isCharacterized: true, presentsOwnershipPerCaller: true)
+    let normalRuntime = OwnershipMockRuntime(config: .init(storagePath: "/tmp"))
+    normalRuntime.mapping = mapping
+    let normal = AgentSession(config: makeConfig(profile), runtime: normalRuntime)
+    try await normal.start()
+
+    let blockedRuntime = OwnershipMockRuntime(config: .init(storagePath: "/tmp"))
+    blockedRuntime.mapping = mapping
+    let blocked = AgentSession(
+      config: makeConfig(profile, repair: true, optIn: true), runtime: blockedRuntime)
+    await #expect(throws: ProfileOwnershipError.self) { try await blocked.start() }
+    #expect(blockedRuntime.launches == 0)
+    _ = try await normal.wait()
+
+    let repairRuntime = OwnershipMockRuntime(config: .init(storagePath: "/tmp"))
+    repairRuntime.mapping = mapping
+    let repair = AgentSession(
+      config: makeConfig(profile, repair: true, optIn: true), runtime: repairRuntime)
+    try await repair.start()
+    let coordinator = makeCoordinator(profile)
+    #expect(try FileLock.tryAcquire(at: coordinator.leaseURL, mode: .shared) == nil)
+    #expect(try FileLock.tryAcquire(at: coordinator.leaseURL, mode: .exclusive) == nil)
+    _ = try await repair.wait()
+    let after = try coordinator.acquireLease(for: .repair)
+    after.release()
+    #expect(coordinator.registeredSessionIDs().isEmpty)
   }
 
   @Test("Other mappings never send the presented-by-mount hint")

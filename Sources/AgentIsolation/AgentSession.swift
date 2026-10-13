@@ -111,6 +111,28 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       stdinContinuation.finish()
     }
 
+    if mountPresentsOwnership, let mapping = runtime.profileOwnershipMapping {
+      // Leases protect shared profiles independently of the ownership handshake.
+      // Ordinary sessions participate too, so an explicit repair can exclude them.
+      let coordinator = ProfileOwnershipCoordinator(
+        profileDirectory: config.profileHomeDir.deletingLastPathComponent(),
+        homeDirectory: config.profileHomeDir, mapping: mapping)
+      let lease = try coordinator.acquireLease(
+        for: config.repairProfileOwnership ? .repair : .verify)
+      do {
+        if config.repairProfileOwnership {
+          try coordinator.assertNoSurvivingSessions(
+            liveContainerIDs: await runtime.liveContainerIDs())
+        }
+        let launched = try await launch(entrypoint: entrypointOverride, ownership: nil)
+        commit(launched, lease: lease, coordinator: coordinator)
+      } catch {
+        lease.release()
+        throw error
+      }
+      return
+    }
+
     guard let coordinator = makeOwnershipCoordinator() else {
       // Legacy behavior: the bootstrap repairs profile ownership itself on every
       // start — unless the mount presents ownership itself — and nothing waits
@@ -148,12 +170,10 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
   /// Whether the runtime's share already presents the profile to the agent user
   /// as its own, so the bootstrap should not attempt to change ownership.
   ///
-  /// An explicit repair request overrides it: the bootstrap then repairs as it
-  /// would anywhere else, and still stops short of walking a home the mount
-  /// refuses to chown.
+  /// Explicit repair still takes the exclusive lease, but cannot make a shared
+  /// mount's synthetic ownership writable. It uses the same agent-access checks.
   private var mountPresentsOwnership: Bool {
     runtime.profileOwnershipMapping?.presentsOwnershipPerCaller == true
-      && !config.repairProfileOwnership
   }
 
   /// Launch, then settle profile ownership with the guest before anything runs.

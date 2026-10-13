@@ -61,13 +61,10 @@
 
     /// How host file ownership presents through Apple's virtiofs share.
     ///
-    /// The share reports each caller as the owner of every file: the agent user
-    /// sees `/home/agent` as its own, including files the macOS user created,
-    /// while root sees a different owner and gets EPERM from any chown. So there
-    /// is no ownership to repair, and the bootstrap is told not to try.
-    ///
-    /// `isCharacterized` stays `false`: with nothing to repair, a record would
-    /// cache nothing, and the fast path stays off.
+    /// The share root has synthetic ownership and rejects chown even though the
+    /// agent can write through it. The capability selects agent-access checks,
+    /// not numeric ownership checks. Guest metadata cannot substantiate an
+    /// ownership record, so the session bypasses that handshake even with opt-in.
     public var profileOwnershipMapping: ProfileOwnershipMapping? {
       ProfileOwnershipMapping(
         identity: "apple-container/virtiofs", isCharacterized: false,

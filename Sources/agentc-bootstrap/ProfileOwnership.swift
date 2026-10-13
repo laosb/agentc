@@ -79,11 +79,13 @@
         throw BootstrapError.setupFailed("agent user missing after creation")
       }
 
-      // The host knows its share reports every caller as the owner, so there is
-      // nothing to chown — only directories to create.
-      if Helpers.envVar(Wire.presentedByMountKey) == "1",
-        settlePresentedByMount(identity: identity)
-      {
+      // Apple virtiofs exposes synthetic ownership at the share root and
+      // rejects chown there. Access is governed by the host share, not by that
+      // metadata. Never walk or rewrite ownership on this runtime's profile.
+      if Helpers.envVar(Wire.presentedByMountKey) == "1" {
+        try Diagnostics.span("bootstrap.profile_access") {
+          try prepareSharedHome(identity: identity)
+        }
         return
       }
 
@@ -306,6 +308,98 @@
       var status: Int32 = 0
       waitpid(child, &status, 0)
       return (status & 0x7f) == 0 && (status >> 8) & 0xff == 0
+    }
+
+    // MARK: - Host-authorized shared home
+
+    /// Do all shared-home initialization as the eventual workload user. In
+    /// particular, success as guest root is not proof that the agent has access.
+    /// The child cannot change the bootstrap's credentials or create root-owned
+    /// managed directories. No ownership record is published for this path.
+    static func prepareSharedHome(
+      at path: String = homePath, identity: (uid: uid_t, gid: gid_t),
+      initializeGroups: (gid_t) -> Int32 = { initgroups("agent", $0) }
+    ) throws {
+      let child = fork()
+      if child == 0 {
+        // Match Privileges.drop: access may be granted by an agent supplementary
+        // group, but must never be borrowed from bootstrap's inherited groups.
+        if initializeGroups(identity.gid) != 0 { _exit(11) }
+        if setgid(identity.gid) != 0 { _exit(11) }
+        if setuid(identity.uid) != 0 { _exit(11) }
+        do {
+          try initializeAccessibleHome(at: path)
+          _exit(0)
+        } catch {
+          // Preserve the failing path and operation, not just a child exit code.
+          let message = "Shared profile access failed: \(error)\n"
+          message.withCString { pointer in
+            #if canImport(Musl)
+              _ = Musl.write(STDERR_FILENO, pointer, strlen(pointer))
+            #else
+              _ = Glibc.write(STDERR_FILENO, pointer, strlen(pointer))
+            #endif
+          }
+          _exit(12)
+        }
+      }
+      guard child > 0 else {
+        throw BootstrapError.setupFailed(
+          "cannot fork to initialize shared profile: \(String(cString: strerror(errno)))")
+      }
+      var status: Int32 = 0
+      var waited: pid_t
+      repeat { waited = waitpid(child, &status, 0) } while waited < 0 && errno == EINTR
+      guard waited == child, status == 0 else {
+        throw BootstrapError.setupFailed(
+          "shared profile \(path) is not usable as agent \(identity.uid):\(identity.gid) "
+            + "(child status \(status)); check host directory access")
+      }
+    }
+
+    /// Called with agent credentials. Validate directory types and prove
+    /// create/write/delete access to both the home and every managed directory.
+    /// Existing permissions and contents are left untouched.
+    static func initializeAccessibleHome(at path: String) throws {
+      for directory in [""] + managedDirectories {
+        let target = directory.isEmpty ? path : "\(path)/\(directory)"
+        var info = stat()
+        if lstat(target, &info) != 0 {
+          guard !directory.isEmpty, errno == ENOENT,
+            mkdir(target, 0o700) == 0 || errno == EEXIST,
+            lstat(target, &info) == 0
+          else {
+            throw BootstrapError.setupFailed(
+              "cannot access or create \(target): \(String(cString: strerror(errno)))")
+          }
+        }
+        guard info.st_mode & S_IFMT == S_IFDIR else {
+          throw BootstrapError.setupFailed("\(target) is not a directory")
+        }
+
+        // A unique probe cannot clobber a user's file or another session's probe.
+        let probe = "\(target)/.agentc-write-probe-\(UUID().uuidString)"
+        let descriptor = open(probe, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+        guard descriptor >= 0 else {
+          throw BootstrapError.setupFailed(
+            "cannot create a file in \(target): \(String(cString: strerror(errno)))")
+        }
+        let written = "a".withCString {
+          #if canImport(Musl)
+            Musl.write(descriptor, $0, 1)
+          #else
+            Glibc.write(descriptor, $0, 1)
+          #endif
+        }
+        let writeError = errno
+        close(descriptor)
+        let removed = unlink(probe)
+        guard written == 1, removed == 0 else {
+          throw BootstrapError.setupFailed(
+            "cannot write or delete a file in \(target): "
+              + "\(String(cString: strerror(written == 1 ? errno : writeError)))")
+        }
+      }
     }
 
     // MARK: - Repair
@@ -538,51 +632,6 @@
         throw BootstrapError.setupFailed(failure)
       }
       return (ownership, OwnershipWalker.Stats(visited: created, changed: created))
-    }
-
-    /// Prepare a home whose mount presents ownership per caller: create what is
-    /// missing and change no ownership at all.
-    ///
-    /// Returns `false`, having created at most the home itself, when the agent
-    /// user does not in fact see the home as its own — the host's description of
-    /// the mount is then wrong, and the caller should repair instead.
-    static func preparePresentedHome(
-      home: String = homePath, identity: (uid: uid_t, gid: gid_t),
-      agentView: (String, (uid: uid_t, gid: gid_t)) -> Bool = {
-        agentSeesOwnership(of: $0, identity: $1)
-      }
-    ) throws -> Bool {
-      try inspectOrCreateDirectory(at: home)
-      guard agentView(home, identity) else { return false }
-      for directory in managedDirectories {
-        try inspectOrCreateDirectory(at: "\(home)/\(directory)")
-      }
-      return true
-    }
-
-    /// What the bootstrap does when the host says the mount presents ownership
-    /// per caller. Returns `false` when it should repair after all.
-    private static func settlePresentedByMount(identity: (uid: uid_t, gid: gid_t)) -> Bool {
-      let start = Diagnostics.now()
-      do {
-        guard try preparePresentedHome(identity: identity) else {
-          bootstrapLogger.warning(
-            """
-            The host reported that \(homePath) is presented to the agent user as its own, \
-            but it is not; repairing ownership instead
-            """)
-          return false
-        }
-      } catch {
-        // Repair creates the same directories and will report the same failure
-        // in its own words.
-        bootstrapLogger.debug("Preparing \(homePath) without repair failed: \(error)")
-        return false
-      }
-      Diagnostics.record(
-        phase: "bootstrap.profile_ownership", startedAt: start,
-        attributes: [("mode", "presented-by-mount"), ("visited", "0"), ("changed", "0")])
-      return true
     }
 
     /// What the bootstrap does when the host does not speak the protocol.
