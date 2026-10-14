@@ -45,6 +45,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Test build output discovery
+        run: bash scripts/test-build-paths.sh
+
       - name: Setup Swift
         uses: ./.github/actions/setup-swift
 
@@ -253,8 +256,9 @@ jobs:
       - name: Build bootstrap binary
         run: |
           swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}"
+          build_dir="$(swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}" --show-bin-path)"
           mkdir -p ~/.agentc/bin
-          cp ".build/${{ matrix.swift-sdk }}/release/agentc-bootstrap" ~/.agentc/bin/bootstrap
+          cp "$build_dir/agentc-bootstrap" ~/.agentc/bin/bootstrap
           chmod +x ~/.agentc/bin/bootstrap
 
       - name: Pre-pull base images for tests
@@ -331,8 +335,9 @@ jobs:
       - name: Build bootstrap binary
         run: |
           swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}"
+          build_dir="$(swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}" --show-bin-path)"
           mkdir -p ~/.agentc/bin
-          cp ".build/${{ matrix.swift-sdk }}/release/agentc-bootstrap" ~/.agentc/bin/bootstrap
+          cp "$build_dir/agentc-bootstrap" ~/.agentc/bin/bootstrap
           chmod +x ~/.agentc/bin/bootstrap
 
       - name: Pre-pull base images for tests

@@ -147,11 +147,9 @@ swift build "${BUILD_ARGS[@]}"
 restore_buildinfo
 trap - EXIT
 
-if [[ -n "${SWIFT_SDK}" ]]; then
-    BUILD_DIR="${SCRIPT_DIR}/.build/${SWIFT_SDK}/${CONFIG}"
-else
-    BUILD_DIR="${SCRIPT_DIR}/.build/${CONFIG}"
-fi
+# SDK identifiers are not necessarily SwiftPM output directory names.
+# Query with the same options used for the build, including traits and SDK.
+BUILD_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 
 BUILT_BINARY="${BUILD_DIR}/agentc"
 OUTPUT_BINARY="${SCRIPT_DIR}/agentc"
