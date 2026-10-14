@@ -14,6 +14,22 @@ struct AgentcIntegrationTests {
     #expect(result.stdout.contains("agentc"))
   }
 
+  @Test("Default test workspace does not inherit the checkout's project settings")
+  func isolatedDefaultWorkspace() async throws {
+    // Deliberately omit --image and --workspace: both must use clean defaults,
+    // not the development image and workspace discovered from the checkout.
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--configurations-dir", sharedConfigurationsDir,
+        "--no-update-image",
+        "--", "test", "!", "-e", ".agentc/settings.json",
+      ]
+    )
+    expectSuccess(result)
+  }
+
   @Test("agentc forwards non-zero container exit codes (session start+wait)")
   func nonZeroExitCodeFlow() async throws {
     // Exercises the AgentSession.start() + wait() path end-to-end: a

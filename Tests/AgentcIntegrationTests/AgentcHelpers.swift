@@ -60,11 +60,29 @@ func runAgentc(
   }
 
   do {
+    // Never inherit the checkout's CWD: its development .agentc settings would
+    // override CLI defaults (including the image) in otherwise unrelated tests.
+    // Keep explicit CWDs for tests that exercise project-settings discovery.
+    let isolatedDirectory = cwd == nil
+      ? FileManager.default.temporaryDirectory
+        .appendingPathComponent("agentc-integration-\(UUID().uuidString)")
+      : nil
+    if let isolatedDirectory {
+      try FileManager.default.createDirectory(
+        at: isolatedDirectory, withIntermediateDirectories: true)
+    }
+    defer {
+      if let isolatedDirectory {
+        try? FileManager.default.removeItem(at: isolatedDirectory)
+      }
+    }
+    let workingDirectory = cwd ?? isolatedDirectory!.path
+
     let result = try await run(
       .path(FilePath(agentcPath)),
       arguments: Arguments(args),
       environment: .inherit.updating(overrides),
-      workingDirectory: cwd.map { FilePath($0) },
+      workingDirectory: FilePath(workingDirectory),
       output: .string(limit: 512 * 1024),
       error: .string(limit: 512 * 1024)
     )
