@@ -281,6 +281,15 @@ jobs:
             ~/.agentc/profiles/__TEST_agentc_shared
           key: test-profiles-${{ matrix.arch }}-${{ hashFiles('Sources/agentc-bootstrap/**', 'Dockerfile') }}
 
+      - name: Run ACP container smoke tests
+        timeout-minutes: 10
+        env:
+          AGENTC_TEST_RUNTIME: docker
+          AGENTC_TEST_IMAGE: docker.io/library/swift:6.4.1
+        run: |
+          python3 scripts/test-acp.py
+          AGENTC_TEST_ACP_SIGNAL=1 python3 scripts/test-acp.py
+
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests
         env:
@@ -359,6 +368,15 @@ jobs:
           path: |
             ~/.agentc/profiles/__TEST_agentc_shared
           key: test-profiles-static-${{ matrix.arch }}-${{ hashFiles('Sources/agentc-bootstrap/**', 'Dockerfile') }}
+
+      - name: Run ACP container smoke tests
+        timeout-minutes: 10
+        env:
+          AGENTC_TEST_RUNTIME: docker
+          AGENTC_TEST_IMAGE: docker.io/library/swift:6.4.1
+        run: |
+          python3 scripts/test-acp.py
+          AGENTC_TEST_ACP_SIGNAL=1 python3 scripts/test-acp.py
 
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests
