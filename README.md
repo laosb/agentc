@@ -143,6 +143,60 @@ agentc run -- "summarize this project" > summary.txt
 
 This allows you to use agentc to run stdio-based MCP or ACP. Automatic TTY behavior is preserved for interactive sessions.
 
+### ACP clients and automatic workspace mounts
+
+Use `agentc acp` when the client supplies the project directory through ACP rather
+than launching agentc in that directory:
+
+```sh
+agentc acp -c claude-acp -i swift:6.4 \
+  --log-file /tmp/agentc.log --stdio-log-file /tmp/agentc.stdio.log
+```
+
+The command forces non-terminal I/O and host-preserving mount paths. On
+`session/new`, `session/load`, or `session/resume`, it reads the requested `cwd`'s
+`.agentc/settings.json` (not the launch directory's settings or an ancestor's).
+`--agentc-folder` can explicitly select another settings folder. Malformed
+settings reject the request rather than silently falling back to defaults.
+CLI options take precedence as usual; additional mounts and exclusions are
+combined with the project settings. Relative additional mounts resolve against
+the session cwd.
+
+Only that workspace and its configured `agent.additionalMounts` /
+`--additional-mount` directories are mounted as project directories, in addition
+to agentc's normal persistent profile, configurations, bootstrap, and toolkit.
+Paths mentioned in prompts, file requests, MCP commands, or unknown extensions
+never cause mounts. The ACP client is trusted to choose host directories:
+optionally use `--workspace /Users/me/Developer` to restrict session cwd selection
+to that root (including symlink resolution). Explicit additional mounts may be
+outside that root.
+
+Each workspace gets a separate container-backed agent, with mounts and settings
+fixed until that backend exits. Settings edits do not expand an existing
+backend. Live directory expansion, session listing, and session forking are not
+currently supported or advertised. At most eight workspace backends plus one
+initialization backend run on a connection.
+
+ACP initialization happens before the client supplies a cwd. A real agent in an
+empty temporary workspace supplies the initial capabilities, using CLI options
+and profile defaults. Specify the ACP configuration and image on the CLI rather
+than relying only on project settings. Project agents must have compatible
+protocol capabilities. Connection-scoped authentication uses this initialization
+backend; projects selecting another profile need credentials in that profile.
+Session IDs are namespaced by workspace to avoid collisions and can be passed
+back to `session/load` / `session/resume` with the same cwd.
+
+JSON parsing uses Swift Codable. Unknown fields and extensions are preserved;
+only routing IDs, session IDs, and unsupported advertised capabilities are
+rewritten. Recoverable protocol errors are logged and processing continues.
+Rejected requests receive JSON-RPC errors; a failed backend does not stop other
+workspaces. Backend initialization times out after 120 seconds, and individual
+JSON messages are limited to 16 MiB.
+
+This does **not** proxy host executable MCP servers. In particular, Xcode's
+macOS `mcpbridge` cannot run inside a Linux container and still needs a separate
+host-side bridge.
+
 Logging uses [apple/swift-log](https://github.com/apple/swift-log), with stderr as
 the default destination. Add `--verbose` (or `-v`) for debug logs and startup timings.
 Use `--log-file <file>` to append logs and stderr, including container bootstrap
@@ -155,6 +209,9 @@ agentc run --verbose --log-file agentc.log -- "summarize this project"
 For protocol diagnostics, `--stdio-log-file <file>` on `run`, `sh`, or `init`
 records session traffic with `stdin:` and `stdout:` prefixes while forwarding the
 original bytes unchanged. It works independently of `--verbose` and `--log-file`:
+
+On `acp`, this option records the client-facing traffic, before incoming routing
+rewrites and after outgoing rewrites; internal initialization traffic is omitted.
 
 ```sh
 agentc run --log-file agentc.log --stdio-log-file stdio.log

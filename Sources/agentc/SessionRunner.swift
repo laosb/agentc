@@ -17,6 +17,12 @@ import AgentIsolation
 /// runtime, and run an agent session.
 enum SessionRunner {
 
+  /// An explicit settings snapshot and protocol transport, independent of process cwd.
+  struct Context: Sendable {
+    var projectSettings: ProjectSettings?
+    var io: ContainerConfiguration.IO
+  }
+
   /// Resolve all configuration from `options`, set up the container runtime,
   /// and run an agent session.
   ///
@@ -31,7 +37,8 @@ enum SessionRunner {
     configurationsPositional: String?,
     allocateTTY: Bool,
     arguments: [String],
-    entrypoint: [String]? = nil
+    entrypoint: [String]? = nil,
+    context: Context? = nil
   ) async throws -> Int32 {
     let stdioLog = try options.stdioLogFile.map { try StdioLog(path: $0) }
     defer { stdioLog?.finish() }
@@ -45,7 +52,7 @@ enum SessionRunner {
       ? StartupDiagnostics(emit: { logger.debug("\(StartupDiagnostics.format($0))") })
       : nil
 
-    let projectSettings = options.loadProjectSettings()
+    let projectSettings = context != nil ? context!.projectSettings : options.loadProjectSettings()
 
     let (_, profileDir) = options.resolveProfile(projectSettings: projectSettings)
     let profileHomeDir = profileDir.appending(path: "home")
@@ -80,7 +87,7 @@ enum SessionRunner {
       return dir
     }
 
-    let isolationConfig = IsolationConfig(
+    var isolationConfig = IsolationConfig(
       image: resolvedImage,
       profileHomeDir: profileHomeDir,
       workspace: workspace,
@@ -103,6 +110,7 @@ enum SessionRunner {
       repairProfileOwnership: options.repairProfileOwnership,
       profileOwnershipFastPathOptIn: options.profileOwnershipFastPath
     )
+    isolationConfig.ioOverride = context?.io
 
     return try await dispatchToRuntime(
       options: options, config: isolationConfig, entrypoint: entrypoint,
@@ -187,6 +195,11 @@ enum SessionRunner {
       // rather than a Foundation placeholder.
       throw AgentcError.profileOwnership(error.description)
     }
-    return try await session.wait()
+    return try await withTaskCancellationHandler {
+      if Task.isCancelled { try? await session.stop() }
+      return try await session.wait()
+    } onCancel: {
+      Task { try? await session.stop() }
+    }
   }
 }

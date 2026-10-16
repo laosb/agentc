@@ -515,7 +515,9 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
     }
 
     let io: ContainerConfiguration.IO
-    if config.customPTY {
+    if let override = config.ioOverride {
+      io = override
+    } else if config.customPTY {
       io = .custom(
         stdin: AgentSessionStdinReader(inner: stdinStream),
         stdout: AgentSessionRawOutWriter(continuation: rawOutContinuation),
@@ -630,6 +632,13 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
   }
 
   // MARK: - Helpers
+
+  /// Request termination without racing the cleanup owned by `wait()`.
+  public func stop() async throws {
+    if let container = state.withLock({ $0.container }) {
+      try await container.stop()
+    }
+  }
 
   private func cleanup(container: Runtime.Container) async {
     // Signal consumers that no further IO will arrive.

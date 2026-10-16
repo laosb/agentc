@@ -68,6 +68,23 @@ swift test \
 
 The integration test suite also needs a working container runtime, a locally available `agentc-bootstrap`, test images, and agent configurations. See [`.github/workflows/test.yml`](./.github/workflows/test.yml) for the CI setup used by the project.
 
+The ACP proxy has a separate real-container smoke test using disposable profiles
+and a small shell-based ACP agent, without provider credentials:
+
+```sh
+./build.sh --debug
+python3 scripts/test-acp.py
+AGENTC_TEST_ACP_SIGNAL=1 python3 scripts/test-acp.py
+```
+
+It defaults to Apple Containerization on macOS and Docker elsewhere, using
+`swift:6.4`. Override with `AGENTC_TEST_RUNTIME` / `AGENTC_TEST_IMAGE`. The test
+checks two isolated workspaces, settings and CLI mounts, exclusions, protocol
+routing, extension passthrough, malformed-message recovery, logging, and cleanup
+on EOF or SIGTERM. Python 3 is needed on the host; the image needs `/bin/sh` and
+`sed`. The regular `AgentcTests` include runtime-independent ACP state-machine
+and policy tests.
+
 Bootstrap ownership regression tests run on Linux with the native toolchain (the
 Static Linux SDK does not include the Testing module):
 

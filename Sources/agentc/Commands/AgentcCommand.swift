@@ -35,6 +35,7 @@ struct AgentcCommand: AsyncParsableCommand, LoggedCommand {
       """,
     subcommands: [
       RunCommand.self,
+      ACPCommand.self,
       ShellCommand.self,
       InitCommand.self,
       ImagesCommand.self,

@@ -129,6 +129,9 @@ public struct IsolationConfig: Sendable {
   /// ``AgentSession/write(_:)`` / ``AgentSession/resize(cols:rows:)`` throw.
   public var customPTY: Bool
 
+  /// Explicit non-terminal streams for protocol proxies. Overrides terminal selection.
+  public var ioOverride: ContainerConfiguration.IO?
+
   /// Optional sink for startup phase measurements, mirroring
   /// ``ContainerRuntimeConfiguration/diagnostics``. `nil` (the default) records nothing.
   public var diagnostics: StartupDiagnostics?
