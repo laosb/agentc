@@ -14,8 +14,13 @@ final class MockRuntime: ContainerRuntime, @unchecked Sendable {
   var containerExitCode: Int32 = 0
   var removedImageRefs: [String] = []
   var removedImageDigests: [String] = []
+  var supportsHostBridge = false
 
   required init(config: ContainerRuntimeConfiguration) {}
+
+  func validateHostSocketRelay() async throws {
+    if !supportsHostBridge { throw ContainerRuntimeError.hostSocketRelayNotSupported }
+  }
 
   func prepare() async throws {
     prepareCallCount += 1

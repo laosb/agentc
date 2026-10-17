@@ -324,6 +324,15 @@
           containerConfig.hosts = .default
           containerConfig.useInit = true
 
+          for relay in configuration.socketRelays {
+            containerConfig.sockets.append(
+              .init(
+                source: URL(fileURLWithPath: relay.hostPath),
+                destination: URL(fileURLWithPath: relay.containerPath),
+                permissions: .init(rawValue: 0o666),
+                direction: .into))
+          }
+
           // Entrypoint
           if !configuration.entrypoint.isEmpty {
             containerConfig.process.arguments = configuration.entrypoint
@@ -490,6 +499,8 @@
       manager = nil
       imageStore = nil
     }
+
+    public func validateHostSocketRelay() async throws {}
 
     /// Stop a container and take its session files back out.
     ///

@@ -7,6 +7,16 @@
 //   Phase 2 (agent): Process agent configurations, set up PATH, run
 //                    prepare.sh scripts, then exec the entrypoint.
 
+import HostBridge
+
+// This mode is also built on the host for transport tests. It must precede
+// ordinary bootstrap setup: a proxy invocation must not create users or drop UID.
+if CommandLine.arguments.count >= 3,
+  CommandLine.arguments[1] == GuestBridge.invocationFlag {
+  GuestBridge.invoke(
+    mapping: CommandLine.arguments[2], arguments: Array(CommandLine.arguments.dropFirst(3)))
+}
+
 #if canImport(FoundationEssentials) && canImport(Musl)
   import FoundationEssentials
   import Musl
@@ -19,8 +29,12 @@
   BootstrapTiming.startedAt = bootstrapStartedAt
 
   do {
+    if getuid() != 0 && getenv("AGENTC_HOST_BRIDGE") != nil {
+      throw BootstrapError.setupFailed("Host bridge installation requires the bootstrap to start as root")
+    }
     if getuid() == 0 {
       try RootSetup.perform()
+      try GuestBridge.installIfPresent()
       // Settle profile ownership before anything else runs. When the host speaks
       // the ownership protocol this blocks until it acknowledges, so no
       // preparation script and no workload can start against a profile whose

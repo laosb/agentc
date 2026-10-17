@@ -229,6 +229,9 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
       let opts = mount.isReadOnly ? "ro" : "rw"
       binds.append("\(mount.hostPath):\(mount.containerPath):\(opts)")
     }
+    for relay in configuration.socketRelays {
+      binds.append("\(relay.hostPath):\(relay.containerPath):ro")
+    }
 
     // Build environment. Sorted so the same configuration always produces the same
     // payload — `environment` is an unordered dictionary.
@@ -269,6 +272,7 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     imageRef: String,
     configuration: ContainerConfiguration
   ) async throws -> DockerContainer {
+    if !configuration.socketRelays.isEmpty { try await validateHostSocketRelay() }
     let useTTY = Self.usesTTY(for: configuration.io)
 
     let runtime = await resolveRuntimeSelection()
@@ -365,6 +369,21 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
       return error
     }
     return DockerRuntimeError.runtimeUnavailable(runtime: name, reason: message)
+  }
+
+  public func validateHostSocketRelay() async throws {
+    #if os(Linux)
+      let selected = await resolveRuntimeSelection()
+      if endpoint.hasPrefix("/") || endpoint.hasPrefix("unix://"),
+        selected.name == "runc", selected.kind == .standard
+      {
+        return
+      }
+    #endif
+    throw DockerRuntimeError.socketError(
+      "Host bridging requires native Linux Docker with a local Unix endpoint and runc, "
+        + "or Apple Containerization. VM-backed and remote Docker socket relays are unsupported. "
+        + "agentc will not change your selected isolation runtime.")
   }
 
   public func removeContainer(_ container: DockerContainer) async throws {

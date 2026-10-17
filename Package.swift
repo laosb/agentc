@@ -42,6 +42,9 @@ let package = Package(
         .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
+    // Small POSIX-only guest transport, also used by the host broker.
+    // Keep networking/process frameworks out of the bootstrap dependency graph.
+    .target(name: "HostBridge"),
     .target(
       name: "AgentIsolationAppleContainerRuntime",
       dependencies: [
@@ -78,6 +81,7 @@ let package = Package(
       name: "agentc",
       dependencies: [
         "AgentIsolation",
+        "HostBridge",
         .target(
           name: "AgentIsolationAppleContainerRuntime",
           condition: .when(traits: ["ContainerRuntimeAppleContainer"])),
@@ -92,7 +96,7 @@ let package = Package(
     ),
     .executableTarget(
       name: "agentc-bootstrap",
-      dependencies: [.product(name: "Logging", package: "swift-log")]
+      dependencies: ["HostBridge", .product(name: "Logging", package: "swift-log")]
     ),
     .testTarget(
       name: "AgentcTests",

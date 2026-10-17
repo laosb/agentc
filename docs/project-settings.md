@@ -54,7 +54,16 @@ All fields are optional. Only the values you specify take effect.
     "cpus": "<int>",
     "memoryMiB": "<int>",
     "bootstrap": "<string>",
-    "respectImageEntrypoint": "<bool>"
+    "respectImageEntrypoint": "<bool>",
+    "hostBinaries": [
+      {
+        "containerPath": "<absolute container path>",
+        "hostCommand": "<absolute host executable>",
+        "arguments": ["<string>", ...],
+        "forwardArguments": "<bool>",
+        "forwardEnvironment": ["<exact variable name>", ...]
+      }
+    ]
   },
   "docker": {
     "runtime": "<string>"
@@ -79,6 +88,7 @@ All fields are optional. Only the values you specify take effect.
 | `agent.memoryMiB` | `--memory-mib` | Container memory limit in MiB. |
 | `agent.bootstrap` | `--bootstrap` | Path to a custom bootstrap/entrypoint script. |
 | `agent.respectImageEntrypoint` | `--respect-image-entrypoint` | Use the image's built-in entrypoint. |
+| `agent.hostBinaries` | `--allow-host-binaries` authorizes execution | Explicit container-path → host-command mappings, with argument policy and an environment forwarding allow list. See [Host binary bridge](host-bridge.md). |
 | `docker.runtime` | `--docker-runtime` | Docker runtime to run containers with (e.g. `kata`, `runsc`, `runc`). Defaults to the strongest isolation the daemon offers — see [Docker Runtime Selection](docker-runtimes.md). |
 
 ### Override and Merge Rules

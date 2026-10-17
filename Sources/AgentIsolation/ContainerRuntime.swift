@@ -78,6 +78,9 @@ public protocol ContainerRuntime: Sendable {
   /// profile mounted, and repairing ownership underneath it would corrupt a live
   /// session. A released lock alone is not proof the profile is idle.
   func liveContainerIDs() async -> Set<String>?
+
+  /// Fail closed unless this runtime can securely relay host Unix sockets.
+  func validateHostSocketRelay() async throws
 }
 
 extension ContainerRuntime {
@@ -86,6 +89,10 @@ extension ContainerRuntime {
   public var profileOwnershipMapping: ProfileOwnershipMapping? { nil }
 
   public func liveContainerIDs() async -> Set<String>? { nil }
+
+  public func validateHostSocketRelay() async throws {
+    throw ContainerRuntimeError.hostSocketRelayNotSupported
+  }
 }
 
 public struct ContainerRuntimeConfiguration: Sendable {
@@ -150,6 +157,17 @@ public struct ContainerConfiguration: Sendable {
   public var cpuCount: Int
   /// Memory limit for the container in mebibytes (MiB).
   public var memoryLimitMiB: Int
+
+  public var socketRelays: [SocketRelay] = []
+
+  public struct SocketRelay: Sendable {
+    public var hostPath: String
+    public var containerPath: String
+    public init(hostPath: String, containerPath: String) {
+      self.hostPath = hostPath
+      self.containerPath = containerPath
+    }
+  }
 
   public init(
     entrypoint: [String],
@@ -228,6 +246,7 @@ extension ContainerRuntimeContainer {
 
 /// Errors reported by conforming ``ContainerRuntime`` implementations.
 public enum ContainerRuntimeError: Error, Sendable {
+  case hostSocketRelayNotSupported
   /// The runtime does not support resizing this container's PTY.
   case resizeNotSupported
 }

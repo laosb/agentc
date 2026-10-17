@@ -7,10 +7,53 @@ import Testing
 
 @Suite("AgentSession")
 struct AgentSessionTests {
+  @Test("Host bridge adds only its explicit manifest mount and socket relay")
+  func hostBridgeAttachment() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    runtime.supportsHostBridge = true
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "agentc-bridge-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    var config = IsolationConfig(
+      image: "test", profileHomeDir: directory.appendingPathComponent("home"),
+      workspace: directory, configurationsDir: directory, configurations: [],
+      environment: ["AGENTC_HOST_BRIDGE": "untrusted"])
+    config.hostBridge = .init(directory: "/private/manifest", socket: "/private/socket")
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    let container = try #require(runtime.lastContainerConfiguration)
+    #expect(container.environment["AGENTC_HOST_BRIDGE"] == "1")
+    #expect(container.socketRelays.count == 1)
+    #expect(container.socketRelays[0].hostPath == "/private/socket")
+    #expect(container.socketRelays[0].containerPath == "/agent-isolation/host-bridge/socket")
+    #expect(
+      container.mounts.contains {
+        $0.hostPath == "/private/manifest" && $0.containerPath == "/agent-isolation/host-bridge"
+          && $0.isReadOnly
+      })
+    _ = try await session.wait()
+  }
+
+  @Test("Host bridge fails closed on unsupported runtimes")
+  func unsupportedHostBridge() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "agentc-bridge-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    var config = IsolationConfig(
+      image: "test", profileHomeDir: directory.appendingPathComponent("home"),
+      workspace: directory, configurationsDir: directory, configurations: [])
+    config.hostBridge = .init(directory: "/manifest", socket: "/socket")
+    let session = AgentSession(config: config, runtime: runtime)
+    await #expect(throws: ContainerRuntimeError.self) { try await session.start() }
+    #expect(runtime.lastContainerConfiguration == nil)
+  }
+
   @Test("Stdio observation preserves the selected session I/O mode", arguments: [false, true])
   func observesStdio(allocateTTY: Bool) async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("agentc-io-\(UUID())")
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "agentc-io-\(UUID())")
     defer { try? FileManager.default.removeItem(at: directory) }
     let input = Mutex(Data())
     let output = Mutex(Data())

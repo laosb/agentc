@@ -1,4 +1,14 @@
 import AgentIsolation
+import Dispatch
+import HostBridge
+
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#else
+  import Musl
+#endif
 
 #if canImport(FoundationEssentials)
   import FoundationEssentials
@@ -53,6 +63,15 @@ enum SessionRunner {
       : nil
 
     let projectSettings = context != nil ? context!.projectSettings : options.loadProjectSettings()
+    let hostBinaries = projectSettings?.agent?.hostBinaries ?? []
+    if !hostBinaries.isEmpty {
+      guard options.allowHostBinaries else {
+        throw BridgeError(
+          "This project declares host binaries. Review agent.hostBinaries, then use "
+            + "--allow-host-binaries to authorize execution outside the container.")
+      }
+      try HostBridgeBroker.validate(hostBinaries)
+    }
 
     let (_, profileDir) = options.resolveProfile(projectSettings: projectSettings)
     let profileHomeDir = profileDir.appending(path: "home")
@@ -112,9 +131,59 @@ enum SessionRunner {
     )
     isolationConfig.ioOverride = context?.io
 
+    var bridge: HostBridgeBroker?
+    if !hostBinaries.isEmpty {
+      guard case .file = bootstrap.mode,
+        bootstrap.capabilities.contains(.hostBridge) || options.bootstrapHostBridge
+      else {
+        throw BridgeError(
+          "Host binaries require a host-bridge-v1 capable agentc-bootstrap. Update the installed "
+            + "bootstrap, or use --bootstrap <new-binary> --bootstrap-host-bridge. "
+            + "Image entrypoints are not supported.")
+      }
+      bridge = try HostBridgeBroker(mappings: hostBinaries, workspace: workspace.path)
+      isolationConfig.hostBridge = bridge?.attachment
+    }
+    defer { bridge?.stop() }
+
+    if bridge != nil && context == nil {
+      // ACP already owns connection-wide signal handling. Ordinary run/sh need
+      // a cancellation path too, otherwise SIGTERM would orphan host children.
+      let snapshot = BridgeOptionsSnapshot(options: options)
+      let config = isolationConfig
+      let task = Task {
+        try await dispatchToRuntime(
+          options: snapshot.options, config: config, entrypoint: entrypoint,
+          projectSettings: projectSettings, diagnostics: diagnostics)
+      }
+      let numbers = [SIGINT, SIGTERM]
+      let previous = numbers.map { signal($0, SIG_IGN) }
+      let sources = numbers.map { number in
+        let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+        source.setEventHandler { task.cancel() }
+        source.resume()
+        return source
+      }
+      defer {
+        for source in sources { source.cancel() }
+        for (number, handler) in zip(numbers, previous) { signal(number, handler) }
+      }
+      return try await withTaskCancellationHandler {
+        try await task.value
+      } onCancel: {
+        task.cancel()
+      }
+    }
+
     return try await dispatchToRuntime(
       options: options, config: isolationConfig, entrypoint: entrypoint,
       projectSettings: projectSettings, diagnostics: diagnostics)
+  }
+
+  // ArgumentParser wrappers are not Sendable; this immutable snapshot is only
+  // read by the one session task, like ACPLaunchSnapshot.
+  private struct BridgeOptionsSnapshot: @unchecked Sendable {
+    let options: SharedOptions
   }
 
   // MARK: - Runtime dispatch

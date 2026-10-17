@@ -47,6 +47,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     public var memoryMiB: Int?
     public var bootstrap: String?
     public var respectImageEntrypoint: Bool?
+    public var hostBinaries: [HostBinaryMapping]?
 
     public init(
       image: String? = nil,
@@ -61,7 +62,8 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       cpus: Int? = nil,
       memoryMiB: Int? = nil,
       bootstrap: String? = nil,
-      respectImageEntrypoint: Bool? = nil
+      respectImageEntrypoint: Bool? = nil,
+      hostBinaries: [HostBinaryMapping]? = nil
     ) {
       self.image = image
       self.profile = profile
@@ -76,6 +78,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       self.memoryMiB = memoryMiB
       self.bootstrap = bootstrap
       self.respectImageEntrypoint = respectImageEntrypoint
+      self.hostBinaries = hostBinaries
     }
   }
 

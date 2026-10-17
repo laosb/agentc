@@ -353,6 +353,8 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       try await runtime.prepare()
     }
 
+    if config.hostBridge != nil { try await runtime.validateHostSocketRelay() }
+
     try FileManager.default.createDirectory(
       at: config.profileHomeDir,
       withIntermediateDirectories: true
@@ -445,6 +447,14 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
         ))
     }
 
+    if let bridge = config.hostBridge {
+      mounts.append(
+        .init(
+          hostPath: bridge.directory,
+          containerPath: "/agent-isolation/host-bridge",
+          isReadOnly: true))
+    }
+
     // Bootstrap file: copy to a temp dir and mount so it can be shared as a virtiofs volume.
     var overridesEntrypoint = false
     switch config.bootstrapMode {
@@ -486,6 +496,9 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
     // Environment: start with user values, excluding reserved bootstrap controls.
     var environment = config.environment.filter { !$0.key.hasPrefix("AGENTC_") }
     environment["AGENTC_CONFIGURATIONS"] = configurations.joined(separator: ",")
+    if config.hostBridge != nil {
+      environment["AGENTC_HOST_BRIDGE"] = "1"
+    }
     if config.verbose {
       environment["AGENTC_VERBOSE"] = "1"
     }
@@ -528,7 +541,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       io = config.allocateTTY ? .currentTerminal : .standardIO
     }
 
-    let containerConfig = ContainerConfiguration(
+    var containerConfig = ContainerConfiguration(
       entrypoint: entrypoint,
       overridesImageEntrypoint: overridesEntrypoint,
       workingDirectory: wsContainerPath,
@@ -539,6 +552,11 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       cpuCount: config.cpuCount,
       memoryLimitMiB: config.memoryLimitMiB
     )
+    if let bridge = config.hostBridge {
+      containerConfig.socketRelays = [
+        .init(hostPath: bridge.socket, containerPath: "/agent-isolation/host-bridge/socket")
+      ]
+    }
 
     do {
       let container: Runtime.Container

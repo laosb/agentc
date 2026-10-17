@@ -193,9 +193,11 @@ Rejected requests receive JSON-RPC errors; a failed backend does not stop other
 workspaces. Backend initialization times out after 120 seconds, and individual
 JSON messages are limited to 16 MiB.
 
-This does **not** proxy host executable MCP servers. In particular, Xcode's
-macOS `mcpbridge` cannot run inside a Linux container and still needs a separate
-host-side bridge.
+ACP does **not automatically rewrite** host executable MCP servers. For host-only
+tools such as Xcode's macOS `mcpbridge`, declare an explicit
+[`agent.hostBinaries` mapping](docs/host-bridge.md) and authorize it with
+`--allow-host-binaries`. The guest proxy is part of `agentc-bootstrap`; container
+environment forwarding is restricted to each mapping's explicit allow list.
 
 Logging uses [apple/swift-log](https://github.com/apple/swift-log), with stderr as
 the default destination. Add `--verbose` (or `-v`) for debug logs and startup timings.

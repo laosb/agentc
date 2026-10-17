@@ -113,6 +113,12 @@ struct SharedOptions: ParsableArguments {
   )
   var env: [EnvironmentVariableOption] = []
 
+  @Flag(name: .long, help: "Authorize configured host binaries to execute outside the container.")
+  var allowHostBinaries: Bool = false
+
+  @Flag(name: .long, help: "Declare that a custom --bootstrap implements agentc host-bridge-v1.")
+  var bootstrapHostBridge: Bool = false
+
   @Option(
     name: [.short, .customLong("configurations")],
     help: "Comma-separated agent configuration names."
@@ -307,10 +313,10 @@ extension SharedOptions {
   ///
   /// Priority: CLI --respect-image-entrypoint → CLI --bootstrap → project settings → installed binary.
   ///
-  /// Capabilities are only ever attached to the bootstrap agentc installed itself,
+  /// Capabilities are automatically attached only to the bootstrap agentc installed itself,
   /// and only when its recorded digest still matches. A user-supplied `--bootstrap`
-  /// script and an image's own entrypoint declare nothing, so nothing waits on them
-  /// for a protocol they do not implement.
+  /// script and an image's own entrypoint declare nothing. Host bridging additionally
+  /// permits an explicit CLI assertion via --bootstrap-host-bridge.
   func resolveBootstrapMode(projectSettings: ProjectSettings? = nil) async throws
     -> ResolvedBootstrap
   {

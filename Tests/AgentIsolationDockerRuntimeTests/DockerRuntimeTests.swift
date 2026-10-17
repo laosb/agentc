@@ -9,6 +9,15 @@
   @Suite("DockerRuntime")
   struct DockerRuntimeTests {
 
+    @Test("Socket relays become explicit bind mounts")
+    func socketRelayPayload() {
+      var configuration = ContainerConfiguration(entrypoint: ["test"])
+      configuration.socketRelays = [.init(hostPath: "/host/socket", containerPath: "/guest/socket")]
+      let request = DockerRuntime.makeCreateRequest(
+        imageRef: "test", configuration: configuration, runtimeName: "runc")
+      #expect(request.HostConfig?.Binds == ["/host/socket:/guest/socket:ro"])
+    }
+
     @Test("DockerImage conforms to ContainerRuntimeImage")
     func imageConformance() {
       var image = DockerImage(ref: "nginx:latest", digest: "sha256:abc123")

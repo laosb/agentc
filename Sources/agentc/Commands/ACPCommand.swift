@@ -18,8 +18,9 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
       Each session cwd selects its own .agentc/settings.json and container. Only
       that cwd and configured additional mounts are exposed as host directories.
       --workspace optionally restricts which cwd roots the client may select.
-      Mounts are fixed for the life of each workspace backend. Xcode's macOS
-      MCP bridge is not proxied to the host by this command.
+      Mounts are fixed for the life of each workspace backend. Host-only MCP
+      commands require explicit hostBinaries mappings and --allow-host-binaries;
+      automatic MCP descriptor rewriting is not supported.
       """
   )
 

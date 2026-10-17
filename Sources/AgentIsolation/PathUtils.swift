@@ -13,6 +13,7 @@ public enum AgentIsolationPathUtils {
     "/agent-isolation/agents",
     "/agent-isolation/toolkit",
     "/agent-isolation/control",
+    "/agent-isolation/host-bridge",
     "/entrypoint-bootstrap",
   ]
 

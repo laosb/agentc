@@ -43,6 +43,7 @@ enum BootstrapManager {
   /// Protocol name for the profile-ownership handshake, as recorded in the
   /// descriptor and understood by this build.
   static let ownershipProtocolName = "profile-ownership-v\(ProfileOwnershipProtocol.version)"
+  static let hostBridgeProtocolName = "host-bridge-v1"
 
   static var descriptorPath: URL {
     bootstrapBinaryPath.appendingPathExtension("json")
@@ -60,13 +61,17 @@ enum BootstrapManager {
     }
     guard let data = try? Data(contentsOf: descriptorPath),
       let descriptor = try? JSONDecoder().decode(BootstrapDescriptor.self, from: data),
-      descriptor.protocols.contains(ownershipProtocolName),
       let actual = sha256Hex(of: binary),
       actual == descriptor.sha256
     else {
       return []
     }
-    return [.profileOwnershipHandshake]
+    var result: BootstrapCapabilities = []
+    if descriptor.protocols.contains(ownershipProtocolName) {
+      result.insert(.profileOwnershipHandshake)
+    }
+    if descriptor.protocols.contains(hostBridgeProtocolName) { result.insert(.hostBridge) }
+    return result
   }
 
   private static func sha256Hex(of url: URL) -> String? {
@@ -77,7 +82,7 @@ enum BootstrapManager {
   private static func writeDescriptor(for binary: URL, version: String) {
     guard let digest = sha256Hex(of: binary) else { return }
     let descriptor = BootstrapDescriptor(
-      version: version, sha256: digest, protocols: [ownershipProtocolName])
+      version: version, sha256: digest, protocols: [ownershipProtocolName, hostBridgeProtocolName])
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
     guard let data = try? encoder.encode(descriptor) else { return }

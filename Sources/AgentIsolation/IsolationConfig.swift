@@ -43,6 +43,7 @@ public struct BootstrapCapabilities: OptionSet, Sendable, Equatable {
   /// actually resolved and waits for the host to acknowledge before running any
   /// preparation script or workload.
   public static let profileOwnershipHandshake = BootstrapCapabilities(rawValue: 1 << 0)
+  public static let hostBridge = BootstrapCapabilities(rawValue: 1 << 1)
 }
 
 /// Determines how host-backed mount destinations are represented in the container.
@@ -131,6 +132,9 @@ public struct IsolationConfig: Sendable {
 
   /// Explicit non-terminal streams for protocol proxies. Overrides terminal selection.
   public var ioOverride: ContainerConfiguration.IO?
+
+  /// Explicitly authorized host bridge. Nil leaves the isolation boundary unchanged.
+  public var hostBridge: HostBridgeAttachment?
 
   /// Optional sink for startup phase measurements, mirroring
   /// ``ContainerRuntimeConfiguration/diagnostics``. `nil` (the default) records nothing.
