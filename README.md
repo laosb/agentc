@@ -193,11 +193,66 @@ Rejected requests receive JSON-RPC errors; a failed backend does not stop other
 workspaces. Backend initialization times out after 120 seconds, and individual
 JSON messages are limited to 16 MiB.
 
-ACP does **not automatically rewrite** host executable MCP servers. For host-only
-tools such as Xcode's macOS `mcpbridge`, declare an explicit
-[`agent.hostBinaries` mapping](docs/host-bridge.md) and authorize it with
-`--allow-host-binaries`. The guest proxy is part of `agentc-bootstrap`; container
-environment forwarding is restricted to each mapping's explicit allow list.
+#### Host stdio MCP servers
+
+To use host-only tools such as Xcode's macOS `mcpbridge`, explicitly enable:
+
+```sh
+agentc acp -c claude-acp -i swift:6.4 --bridge-host-stdio-mcp
+```
+
+Or opt in per workspace in `.agentc/settings.json`:
+
+```json
+{
+  "agent": {
+    "acp": {
+      "bridgeHostStdioMcp": true
+    }
+  }
+}
+```
+
+The default is **off**. An explicit `--no-bridge-host-stdio-mcp` overrides a
+project's opt-in. This setting is snapshotted with the workspace's other settings.
+
+**Enabling this trusts the ACP client to execute commands as your host user,
+outside container isolation.** Project settings can enable it too; use the
+negative CLI flag when opening untrusted projects. `--workspace` does not sandbox
+host MCP commands.
+
+For session creation/loading/resumption, agentc replaces each client-provided
+stdio MCP definition with a guest relay. The host launches the original command
+directly (not through a shell), with its original arguments, the host environment
+overridden by the supplied environment entries, and the session cwd. HTTP/SSE and
+unknown transport definitions remain unchanged. MCP bytes pass through unchanged,
+including notifications and server-initiated requests. MCP stderr follows
+`--log-file` / stderr, never ACP or MCP stdout.
+
+The relay is a native mode of the existing statically linked Swift bootstrap.
+It invokes the already-mounted `/entrypoint-bootstrap/bootstrap` directly:
+there is no additional relay copy, alias, or mount. With an image entrypoint,
+agentc adds that same bootstrap mount without changing the image's entrypoint.
+It requires **no shell, utilities,
+dynamic loader, or shared libraries** in the selected image, and works with
+`--respect-image-entrypoint`. Install an updated `agentc-bootstrap` or use
+`--bootstrap <updated-static-bootstrap>`; old or dynamically linked bootstraps
+are rejected with an actionable error before the workspace agent starts.
+The normal Linux `/proc` mount is still required by Swift's runtime; it is
+supplied by the container runtime, not by image utilities.
+The bridge uses an ephemeral host TCP listener with random,
+per-definition capabilities; the network peer cannot supply commands. The guest
+connects via its default gateway, falling back to `host.docker.internal`.
+This is intended for local Apple Containerization and local Docker networks, not
+remote Docker daemons. The listener binds IPv4 interfaces to allow guest access;
+the transport is **not encrypted**, so use only trusted local networks and allow
+the connection through any host firewall. Capabilities are revoked and host
+processes terminated when their workspace backend stops or ACP shuts down.
+
+Alternatively, declare an explicit [`agent.hostBinaries` mapping](docs/host-bridge.md)
+and authorize it with `--allow-host-binaries`. That separate mechanism maps
+configured container paths to host commands and restricts environment forwarding
+to each mapping's explicit allow list; it does not rewrite ACP MCP definitions.
 
 Logging uses [apple/swift-log](https://github.com/apple/swift-log), with stderr as
 the default destination. Add `--verbose` (or `-v`) for debug logs and startup timings.

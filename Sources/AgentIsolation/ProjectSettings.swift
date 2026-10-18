@@ -48,6 +48,16 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     public var bootstrap: String?
     public var respectImageEntrypoint: Bool?
     public var hostBinaries: [HostBinaryMapping]?
+    public var acp: ACPSettings?
+
+    public struct ACPSettings: Codable, Sendable, Equatable {
+      /// Opt in to running client-provided stdio MCP commands outside the container.
+      public var bridgeHostStdioMcp: Bool?
+
+      public init(bridgeHostStdioMcp: Bool? = nil) {
+        self.bridgeHostStdioMcp = bridgeHostStdioMcp
+      }
+    }
 
     public init(
       image: String? = nil,
@@ -63,7 +73,8 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       memoryMiB: Int? = nil,
       bootstrap: String? = nil,
       respectImageEntrypoint: Bool? = nil,
-      hostBinaries: [HostBinaryMapping]? = nil
+      hostBinaries: [HostBinaryMapping]? = nil,
+      acp: ACPSettings? = nil
     ) {
       self.image = image
       self.profile = profile
@@ -79,6 +90,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       self.bootstrap = bootstrap
       self.respectImageEntrypoint = respectImageEntrypoint
       self.hostBinaries = hostBinaries
+      self.acp = acp
     }
   }
 

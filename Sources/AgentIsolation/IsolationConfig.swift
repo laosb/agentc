@@ -136,6 +136,11 @@ public struct IsolationConfig: Sendable {
   /// Explicitly authorized host bridge. Nil leaves the isolation boundary unchanged.
   public var hostBridge: HostBridgeAttachment?
 
+  /// Enables relay use of the existing bootstrap mount. Supplies that mount when
+  /// bootstrapMode is imageDefault, without overriding the image entrypoint.
+  public var mcpRelayBootstrap: URL?
+  public static let mcpRelayExecutable = "/entrypoint-bootstrap/bootstrap"
+
   /// Optional sink for startup phase measurements, mirroring
   /// ``ContainerRuntimeConfiguration/diagnostics``. `nil` (the default) records nothing.
   public var diagnostics: StartupDiagnostics?

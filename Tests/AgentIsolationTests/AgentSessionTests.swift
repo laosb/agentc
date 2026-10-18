@@ -470,6 +470,41 @@ struct AgentSessionTests {
     #expect(excludeMounts.count == 2)
   }
 
+  @Test("MCP relay reuses one bootstrap mount", arguments: [false, true])
+  func relayReusesBootstrapMount(imageEntrypoint: Bool) async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("agentc-relay-link-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let bootstrap = root.appendingPathComponent("bootstrap")
+    try Data("bootstrap fixture".utf8).write(to: bootstrap)
+    let runtime = MockRuntime(config: .init(storagePath: root.path))
+    var config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: root.appendingPathComponent("home"),
+      workspace: root,
+      configurationsDir: root,
+      bootstrapMode: imageEntrypoint ? .imageDefault : .file(bootstrap))
+    config.mcpRelayBootstrap = bootstrap
+    let original = try FileManager.default.attributesOfItem(atPath: bootstrap.path)
+    let session = AgentSession(config: config, runtime: runtime)
+    try await session.start()
+    let mounts = try #require(runtime.lastContainerConfiguration?.mounts)
+    let bootstrapMounts = mounts.filter { $0.containerPath == "/entrypoint-bootstrap" }
+    #expect(bootstrapMounts.count == 1)
+    #expect(!mounts.contains { $0.containerPath == "/agent-isolation/mcp-relay" })
+    #expect(runtime.lastContainerConfiguration?.overridesImageEntrypoint == !imageEntrypoint)
+    let mount = try #require(bootstrapMounts.first)
+    #expect(mount.isReadOnly)
+    let mounted = URL(fileURLWithPath: mount.hostPath).appendingPathComponent("bootstrap")
+    #expect(try Data(contentsOf: mounted) == Data("bootstrap fixture".utf8))
+    let after = try FileManager.default.attributesOfItem(atPath: bootstrap.path)
+    #expect(after[.posixPermissions] as? NSNumber == original[.posixPermissions] as? NSNumber)
+    _ = try await session.wait()
+    #expect(!FileManager.default.fileExists(atPath: mounted.path))
+    #expect(try Data(contentsOf: bootstrap) == Data("bootstrap fixture".utf8))
+  }
+
   @Test("Bootstrap file overrides entrypoint")
   func bootstrapFileOverridesEntrypoint() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))

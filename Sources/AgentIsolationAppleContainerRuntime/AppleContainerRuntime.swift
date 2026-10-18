@@ -354,7 +354,8 @@
             containerConfig.mounts.append(
               .share(
                 source: mount.hostPath,
-                destination: mount.containerPath
+                destination: mount.containerPath,
+                options: mount.isReadOnly ? ["ro"] : []
               ))
           }
 

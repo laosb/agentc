@@ -289,6 +289,8 @@ jobs:
         run: |
           python3 scripts/test-acp.py
           AGENTC_TEST_ACP_SIGNAL=1 python3 scripts/test-acp.py
+          python3 scripts/test-host-mcp.py
+          python3 scripts/test-mcp-relay-minimal.py
 
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests
@@ -377,6 +379,8 @@ jobs:
         run: |
           python3 scripts/test-acp.py
           AGENTC_TEST_ACP_SIGNAL=1 python3 scripts/test-acp.py
+          python3 scripts/test-host-mcp.py
+          python3 scripts/test-mcp-relay-minimal.py
 
       - name: Run integration tests
         run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests

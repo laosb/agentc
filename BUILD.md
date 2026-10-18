@@ -75,6 +75,7 @@ and a small shell-based ACP agent, without provider credentials:
 ./build.sh --debug
 python3 scripts/test-acp.py
 AGENTC_TEST_ACP_SIGNAL=1 python3 scripts/test-acp.py
+python3 scripts/test-host-mcp.py
 ```
 
 It defaults to Apple Containerization on macOS and Docker elsewhere, using
@@ -84,6 +85,22 @@ routing, extension passthrough, malformed-message recovery, logging, and cleanup
 on EOF or SIGTERM. Python 3 is needed on the host; the image needs `/bin/sh` and
 `sed`. The regular `AgentcTests` include runtime-independent ACP state-machine
 and policy tests.
+
+`test-host-mcp.py` also verifies execution of an unmounted host-only MCP script,
+argument/environment preservation, config opt-in and CLI opt-out, stderr
+redirection, and host process cleanup on EOF/SIGTERM. Its guest ACP fixture uses
+Swift Codable and executes the bootstrap's native relay. Set
+`AGENTC_TEST_BOOTSTRAP` to a freshly built static bootstrap; by default the test
+uses `~/.agentc/bin/bootstrap`, which CI builds before testing. The test driver
+image needs Swift, not the relay itself. `scripts/test-mcp-relay-minimal.py`
+additionally runs the bootstrap in a Docker `scratch` image (with only the kernel
+filesystems supplied by Docker), checking 2 MiB of opaque traffic and EOF flushing
+without image utilities or shared libraries. All smoke scripts run in CI's regular and
+static Linux integration jobs on x64 and arm64.
+
+For the minimal-image test on macOS, set `AGENTC_TEST_MINIMAL_RUNTIME=container`
+to use Apple's `container` CLI instead of Docker. The script constructs and loads
+a one-file image archive directly; no image builder or base-image download is needed.
 
 Bootstrap ownership regression tests run on Linux with the native toolchain (the
 Static Linux SDK does not include the Testing module):

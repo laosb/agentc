@@ -31,6 +31,7 @@ enum SessionRunner {
   struct Context: Sendable {
     var projectSettings: ProjectSettings?
     var io: ContainerConfiguration.IO
+    var mcpRelayBootstrap: URL? = nil
   }
 
   /// Resolve all configuration from `options`, set up the container runtime,
@@ -130,6 +131,7 @@ enum SessionRunner {
       profileOwnershipFastPathOptIn: options.profileOwnershipFastPath
     )
     isolationConfig.ioOverride = context?.io
+    isolationConfig.mcpRelayBootstrap = context?.mcpRelayBootstrap
 
     var bridge: HostBridgeBroker?
     if !hostBinaries.isEmpty {

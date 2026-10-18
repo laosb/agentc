@@ -98,6 +98,7 @@ final class ACPProxy {
   struct Transport {
     var send: (Data) -> Void
     var close: () -> Void
+    var prepareSession: (Object) throws -> Object = { $0 }
   }
   typealias Launch = (String, ACPWorkspace?) throws -> Transport
 
@@ -275,6 +276,9 @@ final class ACPProxy {
       sessions[Self.sessionID(workspace: backend, native: native)] = (backend, native)
     }
     request["params"] = .object(params)
+    if let prepare = backends[backend]?.transport.prepareSession {
+      request = try prepare(request)
+    }
     try forward(request, to: backend)
   }
 

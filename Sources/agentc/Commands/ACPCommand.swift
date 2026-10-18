@@ -18,13 +18,18 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
       Each session cwd selects its own .agentc/settings.json and container. Only
       that cwd and configured additional mounts are exposed as host directories.
       --workspace optionally restricts which cwd roots the client may select.
-      Mounts are fixed for the life of each workspace backend. Host-only MCP
-      commands require explicit hostBinaries mappings and --allow-host-binaries;
-      automatic MCP descriptor rewriting is not supported.
+      Mounts are fixed for the life of each workspace backend. Opt in to
+      --bridge-host-stdio-mcp to execute client-provided MCP commands on the host.
+      Explicit hostBinaries mappings are separately authorized with --allow-host-binaries.
       """
   )
 
   @OptionGroup var options: SharedOptions
+  @Flag(
+    name: .customLong("bridge-host-stdio-mcp"), inversion: .prefixedNo,
+    help: "Run client-provided stdio MCP commands on the host, outside container isolation.")
+  var bridgeHostStdioMcp: Bool?
+
   @Argument(parsing: .remaining, help: "Arguments forwarded to the ACP agent.")
   var entrypointArguments: [String] = []
   var logging: LoggingOptions { options.logging }
@@ -64,6 +69,8 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
     }
     let baseOptions = options
     let arguments = entrypointArguments
+    let bridgeOverride = bridgeHostStdioMcp
+    var hostBridge: HostStdioMCPBridge?
     var tasks: [Task<Void, Never>] = []
     var generations: [String: UUID] = [:]
     let proxy = ACPProxy(
@@ -86,8 +93,16 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
         }
         let (input, stdin) = AsyncStream<Data>.makeStream()
         let snapshot = ACPLaunchSnapshot(options: options, arguments: arguments, settings: settings)
+        let bridgeEnabled =
+          workspace != nil
+          && (bridgeOverride ?? workspace?.settings?.agent?.acp?.bridgeHostStdioMcp ?? false)
         let task = Task {
           do {
+            let relay =
+              bridgeEnabled
+              ? try await BootstrapManager.resolveMCPRelay(
+                options: snapshot.options, settings: snapshot.settings)
+              : nil
             let code = try await SessionRunner.run(
               options: snapshot.options,
               configurationsPositional: snapshot.options.configurationsFlag,
@@ -99,7 +114,8 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
                 io: .custom(
                   stdin: ACPInput(input: input),
                   stdout: ACPOutput { continuation.yield(.backend(id, generation, $0)) },
-                  stderr: ACPOutput { FileHandle.standardError.write($0) })))
+                  stderr: ACPOutput { FileHandle.standardError.write($0) }),
+                mcpRelayBootstrap: relay))
             continuation.yield(.ended(id, generation, "ACP backend exited with status \(code)"))
           } catch {
             continuation.yield(.ended(id, generation, "ACP backend failed: \(error)"))
@@ -116,9 +132,18 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
         return ACPProxy.Transport(
           send: { stdin.yield($0) },
           close: {
+            hostBridge?.stop(backend: id)
             stdin.finish()
             task.cancel()
             timeout.cancel()
+          },
+          prepareSession: { message in
+            guard let workspace, bridgeEnabled
+            else { return message }
+            // Lazy: the default mode does not open a host listener.
+            guard HostStdioMCPBridge.hasStdioServers(message) else { return message }
+            if hostBridge == nil { hostBridge = try HostStdioMCPBridge() }
+            return try hostBridge!.rewrite(message, backend: id, cwd: workspace.cwd)
           })
       },
       output: { data in
@@ -158,6 +183,7 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
     do { try proxy.finish() } catch { logger.warning("\(error)") }
     continuation.finish()
     for task in tasks { task.cancel() }
+    await hostBridge?.shutdown()
     for task in tasks { await task.value }
     if let failure { throw failure }
   }

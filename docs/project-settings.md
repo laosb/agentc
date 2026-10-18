@@ -63,7 +63,10 @@ All fields are optional. Only the values you specify take effect.
         "forwardArguments": "<bool>",
         "forwardEnvironment": ["<exact variable name>", ...]
       }
-    ]
+    ],
+    "acp": {
+      "bridgeHostStdioMcp": "<bool>"
+    }
   },
   "docker": {
     "runtime": "<string>"
@@ -89,6 +92,7 @@ All fields are optional. Only the values you specify take effect.
 | `agent.bootstrap` | `--bootstrap` | Path to a custom bootstrap/entrypoint script. |
 | `agent.respectImageEntrypoint` | `--respect-image-entrypoint` | Use the image's built-in entrypoint. |
 | `agent.hostBinaries` | `--allow-host-binaries` authorizes execution | Explicit container-path → host-command mappings, with argument policy and an environment forwarding allow list. See [Host binary bridge](host-bridge.md). |
+| `agent.acp.bridgeHostStdioMcp` | `--bridge-host-stdio-mcp` / `--no-bridge-host-stdio-mcp` | ACP only: run client-provided stdio MCP commands on the host and relay their traffic to the container. Defaults to false. This grants host command execution outside isolation; enable only for trusted clients and projects. Explicit CLI true/false overrides the project setting. |
 | `docker.runtime` | `--docker-runtime` | Docker runtime to run containers with (e.g. `kata`, `runsc`, `runc`). Defaults to the strongest isolation the daemon offers — see [Docker Runtime Selection](docker-runtimes.md). |
 
 ### Override and Merge Rules

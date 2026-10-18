@@ -23,6 +23,15 @@ if CommandLine.arguments.count >= 3,
 
   let args = Array(CommandLine.arguments.dropFirst())
 
+  // Dispatch before all privileged bootstrap work. MCP uses the same executable
+  // already mounted at /entrypoint-bootstrap/bootstrap.
+  if args.first == MCPStdioRelay.argument {
+    do { exit(try MCPStdioRelay.run(Array(args.dropFirst()))) } catch {
+      bootstrapLogger.error("\(error)")
+      exit(1)
+    }
+  }
+
   // Recorded immediately before the exec that replaces this process, so the span
   // covers everything the bootstrap itself does — never the workload that follows.
   let bootstrapStartedAt = Diagnostics.now()

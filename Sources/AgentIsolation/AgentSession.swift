@@ -457,8 +457,16 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
 
     // Bootstrap file: copy to a temp dir and mount so it can be shared as a virtiofs volume.
     var overridesEntrypoint = false
+    let bootstrapFile: URL?
     switch config.bootstrapMode {
-    case .file(let bootstrapFile):
+    case .file(let file):
+      bootstrapFile = file
+      overridesEntrypoint = true
+    case .imageDefault:
+      // The relay uses the same mount without taking over the image entrypoint.
+      bootstrapFile = config.mcpRelayBootstrap
+    }
+    if let bootstrapFile {
       let tempDir = try makeTempDir()
       tempDirs.append(tempDir)
       let dest = tempDir.appendingPathComponent("bootstrap")
@@ -470,12 +478,9 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       mounts.append(
         .init(
           hostPath: AgentIsolationPathUtils.resolveSymlinksWithPlatformConsiderations(tempDir).path,
-          containerPath: "/entrypoint-bootstrap"
+          containerPath: "/entrypoint-bootstrap",
+          isReadOnly: config.mcpRelayBootstrap != nil
         ))
-      overridesEntrypoint = true
-
-    case .imageDefault:
-      break
     }
 
     // Per-session control directory for the profile-ownership handshake. It is
