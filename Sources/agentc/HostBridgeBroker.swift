@@ -75,7 +75,9 @@ final class HostBridgeBroker: Sendable {
     // The private parent protects host access; the guest may have a different uid.
     chmod(socket, 0o666)
     workers.enter()
-    DispatchQueue.global().async { [self] in
+    // Long-lived poll loops must not occupy the shared global worker pool:
+    // callers can be waiting synchronously for work that pool has yet to start.
+    DispatchQueue(label: "agentc.host-bridge.accept").async { [self] in
       defer {
         close(listener)
         workers.leave()
@@ -142,13 +144,7 @@ final class HostBridgeBroker: Sendable {
       var descriptors = [pollfd(fd: listener, events: Int16(POLLIN), revents: 0)]
       do { try BridgePOSIX.poll(&descriptors) } catch { return }
       guard descriptors[0].revents != 0 else { continue }
-      #if canImport(Darwin)
-        let fd = accept(listener, nil, nil)
-      #elseif canImport(Glibc)
-        let fd = accept4(listener, nil, nil, Int32(SOCK_CLOEXEC.rawValue))
-      #else
-        let fd = accept4(listener, nil, nil, SOCK_CLOEXEC)
-      #endif
+      let fd = BridgePOSIX.accept(listener)
       guard fd >= 0 else { continue }
       do { try BridgePOSIX.configureSocket(fd) } catch {
         close(fd)
@@ -164,7 +160,7 @@ final class HostBridgeBroker: Sendable {
         close(fd)
         continue
       }
-      DispatchQueue.global().async { [self] in
+      DispatchQueue(label: "agentc.host-bridge.connection").async { [self] in
         serve(fd)
         workers.leave()
       }

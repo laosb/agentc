@@ -15,6 +15,35 @@ import Testing
 
 @Suite("Host bridge")
 struct HostBridgeTests {
+  @Test func pipeDescriptorsAreCloseOnExec() throws {
+    let pipe = try BridgePOSIX.pipe()
+    defer { close(pipe.read); close(pipe.write) }
+    #expect(fcntl(pipe.read, F_GETFD) == FD_CLOEXEC)
+    #expect(fcntl(pipe.write, F_GETFD) == FD_CLOEXEC)
+  }
+
+  @Test func acceptedSocketIsCloseOnExec() throws {
+    // Keep the Unix socket path below sockaddr_un's platform-specific limit.
+    let directory = URL(fileURLWithPath: "/tmp/agentc-accept-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appendingPathComponent("socket").path
+    let listener = try BridgePOSIX.socket(path: path, listening: true)
+    defer { close(listener) }
+    let client = try BridgePOSIX.socket(path: path, listening: false)
+    defer { close(client) }
+    let accepted = BridgePOSIX.accept(listener)
+    #expect(accepted >= 0)
+    guard accepted >= 0 else { return }
+    defer { close(accepted) }
+    #if os(Linux)
+      #expect(fcntl(accepted, F_GETFD) == FD_CLOEXEC)
+    #endif
+    try BridgePOSIX.configureSocket(accepted)
+    #expect(fcntl(accepted, F_GETFD) == FD_CLOEXEC)
+    #expect(fcntl(accepted, F_GETFL) & O_NONBLOCK != 0)
+  }
+
   @Test func framingAndLimits() throws {
     let bytes = Data((0...255).map(UInt8.init))
     let encoded = try BridgeFrame(.stdout, bytes).encoded()
@@ -34,6 +63,20 @@ struct HostBridgeTests {
     #expect(throws: BridgeError.self) {
       _ = try BridgeFrame(.stdin, Data(repeating: 0, count: BridgeFrame.chunkSize + 1)).encoded()
     }
+  }
+
+  @Test func idleBrokersDoNotBlockNewInvocations() throws {
+    var idle: [HostBridgeBroker] = []
+    defer { for broker in idle { broker.stop() } }
+    for _ in 0..<32 {
+      idle.append(try HostBridgeBroker(
+        mappings: [.init(containerPath: "/usr/local/bin/host", hostCommand: "/bin/cat")],
+        workspace: "/tmp"))
+    }
+    let result = try roundTrip(
+      command: "/bin/cat", arguments: [], input: Data("still responsive".utf8))
+    #expect(result.output == Data("still responsive".utf8))
+    #expect(result.termination.code == 0)
   }
 
   @Test func settingsAndAuthorization() throws {

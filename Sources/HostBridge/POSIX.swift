@@ -11,6 +11,23 @@
   import Musl
 #endif
 
+#if canImport(Glibc)
+  // These libc symbols exist on supported Linux distributions but are not
+  // re-exported by Swift's Glibc module. Bind them directly, as we do for
+  // clonefile on Darwin, rather than enabling _GNU_SOURCE (which changes other
+  // imported socket signatures) or losing atomic close-on-exec with fcntl.
+  @_silgen_name("pipe2")
+  private func systemPipe2(_ descriptors: UnsafeMutablePointer<Int32>, _ flags: Int32) -> Int32
+
+  @_silgen_name("accept4")
+  private func systemAccept4(
+    _ socket: Int32,
+    _ address: UnsafeMutablePointer<sockaddr>?,
+    _ length: UnsafeMutablePointer<socklen_t>?,
+    _ flags: Int32
+  ) -> Int32
+#endif
+
 public enum BridgePOSIX {
   public static func error(_ operation: String) -> BridgeError {
     BridgeError("\(operation): \(String(cString: strerror(errno)))")
@@ -40,13 +57,25 @@ public enum BridgePOSIX {
     #if canImport(Darwin)
       let result = Darwin.pipe(&fds)
     #elseif canImport(Glibc)
-      let result = Glibc.pipe2(&fds, O_CLOEXEC)
+      let result = systemPipe2(&fds, O_CLOEXEC)
     #else
       let result = Musl.pipe2(&fds, O_CLOEXEC)
     #endif
     guard result == 0 else { throw error("pipe") }
     for fd in fds { _ = fcntl(fd, F_SETFD, FD_CLOEXEC) }
     return (fds[0], fds[1])
+  }
+
+  /// Linux sets close-on-exec atomically with accept. Call configureSocket on
+  /// the result to configure nonblocking IO and Darwin's descriptor flags.
+  public static func accept(_ listener: Int32) -> Int32 {
+    #if canImport(Darwin)
+      Darwin.accept(listener, nil, nil)
+    #elseif canImport(Glibc)
+      systemAccept4(listener, nil, nil, Int32(SOCK_CLOEXEC.rawValue))
+    #else
+      Musl.accept4(listener, nil, nil, SOCK_CLOEXEC)
+    #endif
   }
 
   public static func socket(path: String, listening: Bool) throws -> Int32 {

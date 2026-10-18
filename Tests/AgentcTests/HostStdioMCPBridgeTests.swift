@@ -13,7 +13,7 @@ import Testing
 #endif
 
 @Suite("Host stdio MCP bridge")
-struct HostStdioMCPBridgeTests {
+struct HostStdioMCPBridgeTests: Sendable {
   @Test func relayRequiresUpdatedStaticBootstrap() throws {
     let directory = try temporaryLogDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -101,19 +101,22 @@ struct HostStdioMCPBridgeTests {
       let socket = try connect(port: bridge.port)
       defer { _ = close(socket) }
       try write(socket, Array((token + "\n").utf8))
-      #expect(try read(socket, count: 3) == Array("OK\n".utf8))
-      #expect(try readLine(socket) == "literal $(not-executed)")
-      let actualCwd = URL(fileURLWithPath: try readLine(socket))
-      #expect(actualCwd.resolvingSymlinksInPath() == directory.resolvingSymlinksInPath())
+      #expect(try await read(socket, count: 3) == Array("OK\n".utf8))
+      #expect(try await readLine(socket) == "literal $(not-executed)")
+      let actualCwd = URL(fileURLWithPath: try await readLine(socket))
+      // Linux Foundation can preserve different directory URL hints (trailing
+      // slash) for the same path. Check the host cwd, not URL representation.
+      #expect(
+        actualCwd.resolvingSymlinksInPath().path == directory.resolvingSymlinksInPath().path)
       let opaque: [UInt8] = [0, 255, 123, 34, 120, 34, 58, 49, 125, 10]
       try write(socket, opaque)
-      let echoed = try read(socket, count: opaque.count)
+      let echoed = try await read(socket, count: opaque.count)
       #expect(echoed == opaque)
       bridge.stop(backend: "one")
       let revoked = try connect(port: bridge.port)
       defer { _ = close(revoked) }
       try write(revoked, Array((token + "\n").utf8))
-      #expect(try read(revoked, count: 3).isEmpty)
+      #expect(try await read(revoked, count: 3).isEmpty)
     } catch {
       await bridge.shutdown()
       throw error
@@ -127,7 +130,7 @@ struct HostStdioMCPBridgeTests {
       let socket = try connect(port: bridge.port)
       defer { _ = close(socket) }
       try write(socket, Array((String(repeating: "x", count: 64) + "\n").utf8))
-      #expect(try read(socket, count: 3).isEmpty)
+      #expect(try await read(socket, count: 3).isEmpty)
       // A peer stalled during authentication must not delay shutdown.
       let stalled = try connect(port: bridge.port)
       defer { _ = close(stalled) }
@@ -158,10 +161,10 @@ struct HostStdioMCPBridgeTests {
       let socket = try connect(port: bridge.port)
       defer { _ = close(socket) }
       try write(socket, Array((try token(rewritten) + "\n").utf8))
-      #expect(try read(socket, count: 3) == Array("OK\n".utf8))
+      #expect(try await read(socket, count: 3) == Array("OK\n".utf8))
       var line: [UInt8] = []
       while line.last != 10, line.count < 32 {
-        let next = try read(socket, count: 1)
+        let next = try await read(socket, count: 1)
         guard !next.isEmpty else { break }
         line += next
       }
@@ -226,7 +229,11 @@ struct HostStdioMCPBridgeTests {
     guard count == bytes.count else { throw ACPError("test socket write failed") }
   }
 
-  private func read(_ socket: Int32, count: Int) throws -> [UInt8] {
+  private func read(_ socket: Int32, count: Int) async throws -> [UInt8] {
+    try await blockingIO { try readBlocking(socket, count: count) }
+  }
+
+  private func readBlocking(_ socket: Int32, count: Int) throws -> [UInt8] {
     var result: [UInt8] = []
     while result.count < count {
       var buffer = [UInt8](repeating: 0, count: count - result.count)
@@ -238,13 +245,28 @@ struct HostStdioMCPBridgeTests {
     return result
   }
 
-  private func readLine(_ socket: Int32) throws -> String {
-    var bytes: [UInt8] = []
-    while bytes.count < 4096 {
-      let next = try read(socket, count: 1)
-      if next.isEmpty || next == [10] { return String(decoding: bytes, as: UTF8.self) }
-      bytes += next
+  private func readLine(_ socket: Int32) async throws -> String {
+    try await blockingIO {
+      var bytes: [UInt8] = []
+      while bytes.count < 4096 {
+        let next = try readBlocking(socket, count: 1)
+        if next.isEmpty || next == [10] { return String(decoding: bytes, as: UTF8.self) }
+        bytes += next
+      }
+      throw ACPError("Test line too long")
     }
-    throw ACPError("Test line too long")
+  }
+
+  // recv must not occupy a cooperative executor thread while the bridge's
+  // Subprocess task is waiting for that same executor to launch the host child.
+  private func blockingIO<Value: Sendable>(
+    _ body: @escaping @Sendable () throws -> Value
+  ) async throws -> Value {
+    try await withCheckedThrowingContinuation { continuation in
+      Thread.detachNewThread {
+        do { continuation.resume(returning: try body()) }
+        catch { continuation.resume(throwing: error) }
+      }
+    }
   }
 }
