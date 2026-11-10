@@ -123,7 +123,7 @@ struct SharedOptions: ParsableArguments {
 
   @Option(
     name: .customLong("socks5-dns"),
-    help: "Upstream DNS through SOCKS5 as tcp://IPv4:PORT (default: tcp://1.1.1.1:53)."
+    help: "Upstream DNS over TCP through SOCKS5 as IPv4:PORT (default: 1.1.1.1:53)."
   )
   var socks5Dns: String?
 
@@ -412,9 +412,9 @@ extension SharedOptions {
   }
 
   func resolveSOCKS5Proxy(projectSettings: ProjectSettings? = nil) throws -> SOCKS5Proxy? {
-    let dnsURL = socks5Dns ?? projectSettings?.agent?.socks5Dns
+    let dnsEndpoint = socks5Dns ?? projectSettings?.agent?.socks5Dns
     guard let value = socks5Proxy ?? projectSettings?.agent?.socks5Proxy else {
-      guard dnsURL == nil else {
+      guard dnsEndpoint == nil else {
         throw SOCKS5Proxy.ConfigurationError(
           "--socks5-dns / agent.socks5Dns requires a SOCKS5 proxy (--socks5-proxy / agent.socks5Proxy)."
         )
@@ -425,7 +425,7 @@ extension SharedOptions {
       throw SOCKS5Proxy.ConfigurationError(
         "SOCKS5 enforcement requires the Apple Containerization runtime.")
     }
-    let dns = try dnsURL.map { try SOCKS5DNS(url: $0) } ?? .default
+    let dns = try dnsEndpoint.map { try SOCKS5DNS(url: $0) } ?? .default
     return try SOCKS5Proxy(url: value, environment: ProcessInfo.processInfo.environment, dns: dns)
   }
 

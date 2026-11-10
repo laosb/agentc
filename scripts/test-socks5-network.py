@@ -445,7 +445,7 @@ def run_case(binary, root, mode, udp_reply):
             args = [
                 str(binary), "run", "--runtime", "apple-container",
                 "--socks5-proxy", f"socks5://127.0.0.1:{proxy.server_address[1]}",
-                "--socks5-dns", f"tcp://{DNS_UPSTREAM[0]}:{DNS_UPSTREAM[1]}",
+                "--socks5-dns", f"{DNS_UPSTREAM[0]}:{DNS_UPSTREAM[1]}",
                 "--image", os.environ.get("AGENTC_TEST_SOCKS_IMAGE", "python:3.13-slim"),
                 "--respect-image-entrypoint", "--no-toolkit", "--no-update-image",
                 "--configurations-dir", str(configs), "-c", "noop",

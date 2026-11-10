@@ -1,156 +1,79 @@
-# Enforced SOCKS5 networking (Apple Containerization)
+# SOCKS5 networking
 
-Use `--socks5-proxy socks5://HOST:PORT` to replace the guest's ordinary network
-attachment with a host-side SOCKS5 adapter:
+## Usage
+
+On Apple Containerization, route container traffic through a SOCKS5 proxy:
 
 ```sh
 agentc run --socks5-proxy socks5://127.0.0.1:1080
 ```
 
-Or opt in per project:
+Optionally choose the upstream DNS resolver:
+
+```sh
+agentc run \
+  --socks5-proxy socks5://127.0.0.1:1080 \
+  --socks5-dns 9.9.9.9:53
+```
+
+Or set defaults in `.agentc/settings.json`:
 
 ```json
 {
   "agent": {
     "socks5Proxy": "socks5://127.0.0.1:1080",
-    "socks5Dns": "tcp://9.9.9.9:53"
+    "socks5Dns": "9.9.9.9:53"
   }
 }
 ```
 
-The CLI overrides the project setting. Unset means existing networking is
-unchanged. Empty or invalid values are errors, not an instruction to disable the
-proxy. Docker rejects this setting; it does not silently run unrestricted.
-Malformed/unreadable project settings also fail CLI startup instead of falling
-back to defaults.
+CLI options override project settings. Without a proxy setting, networking is
+unchanged. `127.0.0.1` in the proxy URL refers to the **Mac**, not the container.
 
-## Transparent to the guest
+DNS defaults to `1.1.1.1:53`. A custom resolver requires a proxy and must use
+`IPv4:PORT` with a numeric IPv4 address and nonzero port. Upstream DNS always uses
+TCP through the proxy; the legacy `tcp://IPv4:PORT` form is also accepted.
 
-The adapter runs **on the Mac**, in a child process of the same `agentc`
-executable. No extra binary is installed. The child handles guest Ethernet
-packets using lwIP and Swift networking code. Upstream TCP connections go only
-to the configured SOCKS5 endpoint; upstream UDP goes only to the relay endpoint
-negotiated with that proxy. The authorized host-MCP exception is described below.
+For authentication, supply both `AGENTC_SOCKS5_USERNAME` and
+`AGENTC_SOCKS5_PASSWORD` in the **host environment** through your shell or secret
+manager. Omit both for an unauthenticated proxy. Credentials in URLs are rejected;
+do not store credentials in project settings.
 
-There is no simultaneous NAT attachment. Guest root cannot restore direct
-internet access by changing routes. If the proxy or child fails, connections
-fail; agentc never falls back to direct networking.
+## Behavior
 
-Applications use ordinary sockets. agentc does not inject proxy variables,
-credentials, a proxy client, or a guest-side helper. The guest sees a virtual
-Ethernet device and a DNS resolver/default gateway. If the proxy URL is in the
-mounted project's settings, the guest can read that file, just as with other
-project files. Public egress IP, latency, and unsupported protocols may still
-reveal that traffic passes through an intermediary; this is transparency, not
-undetectability.
+- **Transparent to applications:** no proxy-aware application setup is needed.
+  agentc does not inject proxy variables or credentials into the container.
+  Settings stored in a mounted project file remain readable there.
+- **No direct fallback:** if the proxy fails, traffic fails rather than bypassing
+  it. Invalid settings are errors, not an instruction to disable the proxy.
+- **IPv4 TCP and UDP are supported.** UDP requires a proxy with `UDP ASSOCIATE`
+  support and a reachable UDP relay. TCP-only proxies, including ordinary OpenSSH
+  dynamic forwarding, cannot carry UDP.
+- **Gateway DNS always goes through SOCKS5 over TCP**, even when the application
+  sends a UDP query. The container sees its gateway as the resolver. Queries sent
+  to another DNS address use ordinary proxied TCP or UDP.
+- **TLS remains end-to-end.** SOCKS5 itself does not encrypt traffic to the proxy,
+  including its authentication handshake; use a trusted local proxy or a
+  separately secured connection.
+- **Host bridges remain available.** Commands run through `--allow-host-binaries`
+  or ACP `--bridge-host-stdio-mcp` execute on the host and are outside this network
+  policy. Host-side image/kernel downloads and configuration updates are also
+  outside the policy.
 
-`127.0.0.1` in the proxy URL refers to the **Mac**, not the container. A hostname
-for the proxy itself is resolved by the Mac before connecting. Guest DNS queries
-do not use the Mac's resolver.
+## Limits
 
-## Supported traffic
+- Apple Containerization only; Docker rejects these settings.
+- IPv6 container traffic, ICMP, and fragmented IP packets are blocked.
+- UDP payloads may be empty or up to **1472 bytes**. Network MTU and firewall
+  restrictions can still cause loss. Domain-name UDP relay addresses and SOCKS
+  fragmentation are unsupported.
+- The proxy must allow the requested destinations, including the DNS resolver's
+  TCP port.
 
-- IPv4 TCP, transparently tunneled using SOCKS5 `CONNECT`.
-- Guest UDP DNS to the configured gateway resolver, forwarded as DNS-over-TCP
-  through SOCKS5 to the selected upstream (`1.1.1.1:53` by default). TCP DNS to that gateway uses the same resolver,
-  including fallback after a truncated UDP answer.
-- Other IPv4 UDP, including QUIC/HTTP/3, uses SOCKS5 `UDP ASSOCIATE` when the
-  proxy supports it. Datagram boundaries and guest source-port isolation are
-  preserved. Empty payloads and unfragmented payloads up to 1472 bytes are supported.
-- IPv6 guest traffic, ICMP, and fragmented IP traffic remain blocked.
-- TLS remains end-to-end. No interception CA is installed.
+| Traffic | Capacity | Timeouts |
+|---|---|---|
+| TCP | 128 flows, including connections in TIME_WAIT | 20 seconds to establish; one hour idle |
+| UDP | 64 flows; eight queued datagrams per flow, plus one in flight | 60 seconds idle |
+| Gateway UDP DNS | 32 concurrent requests | 15 seconds per request |
 
-The proxy must permit the relevant destination ports, including the selected
-resolver's TCP port. DNS sent to a non-gateway address uses ordinary proxied TCP
-or UDP, not the gateway resolver override.
-
-### DNS configuration
-
-```sh
-agentc run \
-  --socks5-proxy socks5://127.0.0.1:1080 \
-  --socks5-dns tcp://9.9.9.9:53
-```
-
-`--socks5-dns` overrides `agent.socks5Dns`. It accepts a strict numeric IPv4
-address and nonzero port, not a hostname, IPv6, credentials, or URL suffixes.
-Specifying it without an effective proxy is an error. Unset retains the default.
-`agentc init` persists an explicitly supplied DNS setting.
-
-Both UDP and TCP queries to the guest gateway use this one upstream over TCP
-through SOCKS5. The guest still sees only `10.87.0.1` in its resolver settings,
-not the selected upstream. Failure never consults the host resolver or enables
-a direct DNS path. A project-configured value is naturally readable in the
-mounted project file.
-
-### UDP compatibility and limits
-
-UDP needs both SOCKS5 UDP support and a reachable relay endpoint. A TCP-only
-proxy (including ordinary OpenSSH dynamic forwarding) cannot carry UDP. Rejected
-associations drop datagrams, without changing TCP or gateway DNS behavior. An
-unsupported-command reply suppresses new association attempts for 30 seconds.
-
-Each guest source-port/destination tuple gets its own TCP control connection and
-connected UDP relay socket. Replies must match the complete expected envelope
-and peer tuple; fragmented SOCKS envelopes are not reassembled. Closing the
-control connection closes the UDP association. Numeric IPv4/IPv6 relay endpoints
-are supported (an IPv6 relay does not enable IPv6 inside the guest); domain
-relay metadata and unspecified IPv6 relay addresses are rejected. A wildcard
-IPv4 relay address uses the actual TCP proxy peer.
-
-SOCKS encapsulation adds overhead beyond the guest's packet size. Outer-network
-MTU or firewall restrictions can still cause datagram loss. On some macOS
-Network.framework versions, a malformed raw zero-byte relay datagram produces
-a transport error and closes the association; a valid empty SOCKS payload works.
-
-Resource limits are deliberately bounded: 128 TCP flows (including lwIP's
-TIME_WAIT state), 32 concurrent UDP DNS jobs, a 20-second connection deadline,
-a 15-second UDP DNS deadline, and a one-hour established inactivity timeout.
-UDP has a separate 64-flow limit, eight queued datagrams plus one in-flight send
-per flow, and 60-second idle expiry. Overflow is dropped, not buffered without bound.
-Exceeding a limit fails or drops traffic; it never enables a direct path.
-
-## Authentication
-
-For username/password authentication, supply both host environment variables
-`AGENTC_SOCKS5_USERNAME` and `AGENTC_SOCKS5_PASSWORD` through your shell or secret
-manager. Omit both for unauthenticated SOCKS5.
-
-Credentials in the URL are rejected so they cannot accidentally be persisted by
-`agentc init`. Credentials are not put in the helper's arguments, environment,
-logs, or guest environment; they are sent over a private parent/child socket.
-Do not store them in project settings.
-
-SOCKS5 itself does not encrypt the connection to the proxy, including its
-username/password handshake. Use a trusted local endpoint or a separately
-secured transport for remote proxies.
-
-## Host bridges and the boundary of enforcement
-
-`--allow-host-binaries` and ACP `--bridge-host-stdio-mcp` remain supported.
-
-- Host-binary relays continue to use the existing Unix-socket/vsock transport.
-- With host stdio MCP enabled, the adapter permits one explicit local exception:
-  the guest gateway's selected MCP port connects to the Mac's loopback listener
-  on that same port. The listener still requires its per-definition capability.
-  This is not a general host-network bypass.
-- Commands executed on the host through either bridge are **outside the guest
-  network policy** and may use the Mac's ordinary network access. Enabling those
-  bridges grants host execution as before.
-
-Host-side image/kernel downloads and configuration-repository updates are also
-outside this setting.
-
-## Implementation boundary
-
-The networking child has a separate address space and lifetime, not an additional
-macOS security sandbox. It runs with the user's privileges. Packet processing,
-policy, SOCKS5, and scheduling are Swift; lwIP and its narrow interop adapter are
-C. See `Sources/CSOCKSNetwork/vendor/README.md` for the pinned dependency and
-license.
-
-The engine uses coalesced readiness notifications and actor-owned TCP waiters,
-not per-connection idle polling. A 250ms timer services lwIP maintenance; bounded
-backoff handles sockets that report writable while still returning `ENOBUFS`.
-See [network benchmarks](network-benchmark.md) for reproducible throughput,
-latency, CPU, and resident-memory measurements.
+Exceeding a limit fails or drops traffic; it never enables direct access.

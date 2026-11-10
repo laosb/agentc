@@ -19,19 +19,20 @@ struct SOCKS5OptionsTests {
     #expect(explicit.resolveEnvironment(projectSettings: settings).isEmpty)
   }
 
-  @Test func dnsPrecedenceAndHostOnlyPolicy() throws {
+  @Test(arguments: ["", "tcp://"])
+  func dnsPrecedenceAndHostOnlyPolicy(_ prefix: String) throws {
     let settings = ProjectSettings(
-      agent: .init(socks5Proxy: "socks5://localhost:1080", socks5Dns: "tcp://9.9.9.9:5353"))
+      agent: .init(socks5Proxy: "socks5://localhost:1080", socks5Dns: "\(prefix)9.9.9.9:5353"))
     let inherited = try SharedOptions.parse(["--runtime", "apple-container"])
     #expect(
       try inherited.resolveSOCKS5Proxy(projectSettings: settings)?.dns
-        == SOCKS5DNS(url: "tcp://9.9.9.9:5353"))
+        == SOCKS5DNS(url: "9.9.9.9:5353"))
     let explicit = try SharedOptions.parse([
-      "--runtime", "apple-container", "--socks5-dns", "tcp://8.8.8.8:53",
+      "--runtime", "apple-container", "--socks5-dns", "\(prefix)8.8.8.8:53",
     ])
     #expect(
       try explicit.resolveSOCKS5Proxy(projectSettings: settings)?.dns
-        == SOCKS5DNS(url: "tcp://8.8.8.8:53"))
+        == SOCKS5DNS(url: "8.8.8.8:53"))
     #expect(explicit.resolveEnvironment(projectSettings: settings).isEmpty)
     // Each field has independent CLI precedence.
     let proxyOnly = try SharedOptions.parse([
@@ -41,7 +42,7 @@ struct SOCKS5OptionsTests {
   }
 
   @Test func dnsWithoutProxyIsRejected() throws {
-    let explicit = try SharedOptions.parse(["--socks5-dns", "tcp://9.9.9.9:53"])
+    let explicit = try SharedOptions.parse(["--socks5-dns", "9.9.9.9:53"])
     #expect(throws: SOCKS5Proxy.ConfigurationError.self) { try explicit.resolveSOCKS5Proxy() }
     let inherited = try SharedOptions.parse([])
     #expect(throws: SOCKS5Proxy.ConfigurationError.self) {
@@ -64,7 +65,7 @@ struct SOCKS5OptionsTests {
   }
 
   @Test func initPersistsOnlyExplicitDNS() async throws {
-    for dns in [nil, "tcp://9.9.9.9:5353"] as [String?] {
+    for dns in [nil, "9.9.9.9:5353", "tcp://9.9.9.9:5353"] as [String?] {
       let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
       defer { try? FileManager.default.removeItem(at: root) }
       var arguments = [
@@ -114,7 +115,7 @@ struct SOCKS5OptionsTests {
     let command = try #require(
       AgentcCommand.parseAsRoot([
         "acp", "--runtime", "apple-container", "--socks5-proxy", "socks5://localhost:1080",
-        "--socks5-dns", "tcp://9.9.9.9:53", "--bridge-host-stdio-mcp", "--allow-host-binaries",
+        "--socks5-dns", "9.9.9.9:53", "--bridge-host-stdio-mcp", "--allow-host-binaries",
       ]) as? ACPCommand)
     #expect(command.bridgeHostStdioMcp == true)
     #expect(command.options.allowHostBinaries)

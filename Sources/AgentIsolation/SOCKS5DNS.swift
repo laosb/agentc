@@ -14,8 +14,8 @@ public struct SOCKS5DNS: Codable, Sendable, Equatable {
   public init(url: String) throws {
     // Parse the exact grammar rather than URLComponents or inet_aton, which
     // accept platform-dependent normalization, escaping, or abbreviated IPv4.
-    guard url.hasPrefix("tcp://") else { throw Self.invalidEndpoint }
-    let endpoint = url.dropFirst("tcp://".count)
+    // TCP is implicit; retain the original explicit form for compatibility.
+    let endpoint = url.hasPrefix("tcp://") ? url.dropFirst("tcp://".count) : url[...]
     let parts = endpoint.split(separator: ":", omittingEmptySubsequences: false)
     guard parts.count == 2, Self.isCanonicalIPv4(parts[0]),
       !parts[1].isEmpty, parts[1].utf8.allSatisfy({ (48...57).contains($0) }),
@@ -36,7 +36,9 @@ public struct SOCKS5DNS: Codable, Sendable, Equatable {
   }
 
   private static var invalidEndpoint: SOCKS5Proxy.ConfigurationError {
-    .init("Expected tcp://IPv4:PORT for SOCKS5 DNS without credentials, path, query, or fragment.")
+    .init(
+      "Expected IPv4:PORT for SOCKS5 DNS (optional tcp:// prefix), without credentials, path, query, or fragment."
+    )
   }
 
   private enum CodingKeys: String, CodingKey { case host, port }

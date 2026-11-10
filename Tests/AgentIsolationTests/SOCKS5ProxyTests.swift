@@ -22,10 +22,11 @@ struct SOCKS5ProxyTests {
   @Test func dnsEndpointAndWireRoundTrip() throws {
     #expect(SOCKS5DNS.default.host == "1.1.1.1")
     #expect(SOCKS5DNS.default.port == 53)
-    let dns = try SOCKS5DNS(url: "tcp://9.9.9.9:0053")
+    let dns = try SOCKS5DNS(url: "9.9.9.9:0053")
     #expect(dns.host == "9.9.9.9")
     #expect(dns.port == 53)
-    #expect(try SOCKS5DNS(url: "tcp://192.0.2.255:65535").port == 65535)
+    #expect(try SOCKS5DNS(url: "tcp://9.9.9.9:0053") == dns)
+    #expect(try SOCKS5DNS(url: "192.0.2.255:65535").port == 65535)
     let proxy = try SOCKS5Proxy(url: "socks5://localhost:1080", dns: dns)
     #expect(try JSONDecoder().decode(SOCKS5Proxy.self, from: JSONEncoder().encode(proxy)) == proxy)
     let oldWire = Data(#"{"host":"localhost","port":1080}"#.utf8)
@@ -46,6 +47,17 @@ struct SOCKS5ProxyTests {
   ])
   func invalidDNSEndpoint(_ value: String) {
     #expect(throws: SOCKS5Proxy.ConfigurationError.self) { try SOCKS5DNS(url: value) }
+    if value.hasPrefix("tcp://") {
+      #expect(throws: SOCKS5Proxy.ConfigurationError.self) {
+        try SOCKS5DNS(url: String(value.dropFirst("tcp://".count)))
+      }
+    }
+  }
+
+  @Test func repeatedDNSSchemeIsRejected() {
+    #expect(throws: SOCKS5Proxy.ConfigurationError.self) {
+      try SOCKS5DNS(url: "tcp://tcp://1.1.1.1:53")
+    }
   }
 
   @Test(arguments: [
@@ -55,6 +67,7 @@ struct SOCKS5ProxyTests {
     #"{"host":"1.1.1.1","port":0}"#, #"{"host":"1.1.1.1","port":65536}"#,
     #"{"host":"1.1.1.1","port":-1}"#, #"{"host":"1.1.1.1","port":"53"}"#,
     #"{"host":"1.1.1.1:53","port":53}"#,
+    #"{"host":"tcp://1.1.1.1","port":53}"#,
   ])
   func invalidDNSWireCannotFallBack(_ dns: String) {
     let wire = Data(#"{"host":"localhost","port":1080,"dns":\#(dns)}"#.utf8)
@@ -90,9 +103,10 @@ struct SOCKS5ProxyTests {
     }
   }
 
-  @Test func projectSettingRoundTrips() throws {
+  @Test(arguments: ["9.9.9.9:53", "tcp://9.9.9.9:53"])
+  func projectSettingRoundTrips(_ dns: String) throws {
     let settings = ProjectSettings(
-      agent: .init(socks5Proxy: "socks5://localhost:1080", socks5Dns: "tcp://9.9.9.9:53"))
+      agent: .init(socks5Proxy: "socks5://localhost:1080", socks5Dns: dns))
     let data = try JSONEncoder().encode(settings)
     #expect(try JSONDecoder().decode(ProjectSettings.self, from: data) == settings)
     let oldSettings = Data(#"{"agent":{"socks5Proxy":"socks5://localhost:1080"}}"#.utf8)
