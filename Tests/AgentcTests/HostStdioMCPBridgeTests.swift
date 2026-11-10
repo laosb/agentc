@@ -256,17 +256,4 @@ struct HostStdioMCPBridgeTests: Sendable {
       throw ACPError("Test line too long")
     }
   }
-
-  // recv must not occupy a cooperative executor thread while the bridge's
-  // Subprocess task is waiting for that same executor to launch the host child.
-  private func blockingIO<Value: Sendable>(
-    _ body: @escaping @Sendable () throws -> Value
-  ) async throws -> Value {
-    try await withCheckedThrowingContinuation { continuation in
-      Thread.detachNewThread {
-        do { continuation.resume(returning: try body()) }
-        catch { continuation.resume(throwing: error) }
-      }
-    }
-  }
 }

@@ -62,6 +62,12 @@ jobs:
       - name: Run unit tests
         run: swift test --disable-default-traits --traits "${{ matrix.traits }}" --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests|AgentIsolationAppleContainerRuntimeTests|AgentcBootstrapTests|AgentcTests|SOCKSNetworkTests'
 
+      - name: Check CLI tests with a single cooperative worker
+        if: runner.os == 'macOS'
+        env:
+          LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1"
+        run: swift test --skip-build --disable-default-traits --traits "${{ matrix.traits }}" --filter AgentcTests
+
       - name: Check packet engine and readiness under AddressSanitizer
         if: runner.os == 'macOS'
         run: |

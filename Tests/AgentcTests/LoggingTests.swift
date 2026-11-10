@@ -39,10 +39,10 @@ struct LoggingTests {
   }
 
   @Test("Diagnostics go only to stderr by default")
-  func stderrOnly() throws {
+  func stderrOnly() async throws {
     let directory = try temporaryLogDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
-    let result = try runCLI([
+    let result = try await runCLI([
       "profiles", "remove", "--profiles-dir", directory.path, "missing",
     ])
     #expect(result.status == 1)
@@ -52,13 +52,13 @@ struct LoggingTests {
   }
 
   @Test("Log files append diagnostics and command failures without stdout leakage")
-  func fileRedirection() throws {
+  func fileRedirection() async throws {
     let directory = try temporaryLogDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let log = directory.appendingPathComponent("agent.log")
     try Data("previous run\n".utf8).write(to: log)
     for name in ["missing-one", "missing-two"] {
-      let result = try runCLI([
+      let result = try await runCLI([
         "--log-file", log.path, "profiles", "remove", "--profiles-dir", directory.path, name,
       ])
       #expect(result.status == 1)
@@ -70,7 +70,7 @@ struct LoggingTests {
     #expect(contents.contains("missing-one"))
     #expect(contents.contains("missing-two"))
 
-    let failure = try runCLI([
+    let failure = try await runCLI([
       "images", "inspect", "--runtime", "docker", "--log-file", log.path, "missing:latest",
     ])
     #expect(failure.status != 0)
@@ -85,10 +85,10 @@ struct LoggingTests {
     arguments: [
       "--log-file", "--stdio-log-file",
     ])
-  func invalidDestination(option: String) throws {
+  func invalidDestination(option: String) async throws {
     let directory = try temporaryLogDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
-    let result = try runCLI([
+    let result = try await runCLI([
       "run", option, directory.appendingPathComponent("missing/log").path,
     ])
     #expect(result.status != 0)
@@ -97,7 +97,7 @@ struct LoggingTests {
   }
 
   @Test("Verbose startup diagnostics use the selected log file", arguments: [false, true])
-  func startupDiagnostics(verbose: Bool) throws {
+  func startupDiagnostics(verbose: Bool) async throws {
     let directory = try temporaryLogDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let configurations = directory.appendingPathComponent("configurations")
@@ -116,7 +116,7 @@ struct LoggingTests {
       "--log-file", log.path, "--stdio-log-file", transcript.path,
     ]
     if verbose { arguments.append("--verbose") }
-    let result = try runCLI(arguments)
+    let result = try await runCLI(arguments)
     #expect(result.status != 0)  // The missing socket stops before any container starts.
     #expect(result.stdout.isEmpty)
     #expect(result.stderr.isEmpty)
@@ -127,11 +127,11 @@ struct LoggingTests {
   }
 
   @Test("Log files reject stdout, devices, directories, and invalid paths")
-  func rejectNonFiles() throws {
+  func rejectNonFiles() async throws {
     for path in ["/dev/stdout", "/dev/null", "/tmp", "", "bad\0path"] {
       #expect(throws: LogFileError.self) { try LogFile(path: path) }
     }
-    let result = try runCLI(["version", "--log-file", "/dev/stdout"])
+    let result = try await runCLI(["version", "--log-file", "/dev/stdout"])
     #expect(result.status != 0)
     #expect(result.stdout.isEmpty)
     #expect(result.stderr.contains("must be a regular file"))
@@ -146,7 +146,14 @@ func temporaryLogDirectory() throws -> URL {
 
 private final class LoggingTestBundle: NSObject {}
 
-private func runCLI(_ arguments: [String]) throws -> (status: Int32, stdout: String, stderr: String)
+private func runCLI(_ arguments: [String]) async throws
+  -> (status: Int32, stdout: String, stderr: String)
+{
+  try await blockingIO { try runCLIBlocking(arguments) }
+}
+
+private func runCLIBlocking(_ arguments: [String]) throws
+  -> (status: Int32, stdout: String, stderr: String)
 {
   #if os(macOS)
     // XCTest loads our tests into its own runner, whose argv[0] is outside

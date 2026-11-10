@@ -65,16 +65,19 @@ struct HostBridgeTests {
     }
   }
 
-  @Test func idleBrokersDoNotBlockNewInvocations() throws {
-    var idle: [HostBridgeBroker] = []
-    defer { for broker in idle { broker.stop() } }
-    for _ in 0..<32 {
-      idle.append(try HostBridgeBroker(
-        mappings: [.init(containerPath: "/usr/local/bin/host", hostCommand: "/bin/cat")],
-        workspace: "/tmp"))
+  @Test func idleBrokersDoNotBlockNewInvocations() async throws {
+    let result = try await blockingIO {
+      var idle: [HostBridgeBroker] = []
+      defer { for broker in idle { broker.stop() } }
+      for _ in 0..<32 {
+        idle.append(
+          try HostBridgeBroker(
+            mappings: [.init(containerPath: "/usr/local/bin/host", hostCommand: "/bin/cat")],
+            workspace: "/tmp"))
+      }
+      return try roundTripBlocking(
+        command: "/bin/cat", arguments: [], input: Data("still responsive".utf8))
     }
-    let result = try roundTrip(
-      command: "/bin/cat", arguments: [], input: Data("still responsive".utf8))
     #expect(result.output == Data("still responsive".utf8))
     #expect(result.termination.code == 0)
   }
@@ -119,9 +122,9 @@ struct HostBridgeTests {
     }
   }
 
-  @Test func byteStreamsEOFAndExit() throws {
+  @Test func byteStreamsEOFAndExit() async throws {
     let payload = Data((0..<(512 * 1024)).map { UInt8($0 % 256) })
-    let result = try roundTrip(
+    let result = try await roundTrip(
       command: "/bin/sh", arguments: ["-c", "cat; printf 'separate stderr' >&2; exit 37"],
       input: payload)
     #expect(result.output == payload)
@@ -129,8 +132,8 @@ struct HostBridgeTests {
     #expect(result.termination == .init(code: 37))
   }
 
-  @Test func forwardsOnlyNamedEnvironmentAndLiteralArguments() throws {
-    let result = try roundTrip(
+  @Test func forwardsOnlyNamedEnvironmentAndLiteralArguments() async throws {
+    let result = try await roundTrip(
       command: "/bin/sh",
       arguments: [
         "-c", #"printf '%s|%s|%s' "$BRIDGE_ALLOWED" "${BRIDGE_NOT_ALLOWED-unset}" "$1""#, "sh",
@@ -141,14 +144,14 @@ struct HostBridgeTests {
       String(decoding: result.output, as: UTF8.self) == "forwarded\n🌍|unset|; echo should-not-run")
   }
 
-  @Test func signalTermination() throws {
-    let result = try roundTrip(
+  @Test func signalTermination() async throws {
+    let result = try await roundTrip(
       command: "/bin/sh", arguments: ["-c", "kill -TERM $$"], input: Data())
     #expect(result.termination.signal == "TERM")
   }
 
-  @Test func childClosesInputEarly() throws {
-    let result = try roundTrip(
+  @Test func childClosesInputEarly() async throws {
+    let result = try await roundTrip(
       command: "/bin/sh", arguments: ["-c", "exec 0<&-; printf done; sleep 0.1"],
       input: Data(repeating: 97, count: 1024 * 1024))
     #expect(result.output == Data("done".utf8))
@@ -190,7 +193,7 @@ struct HostBridgeTests {
     try await withThrowingTaskGroup(of: Void.self) { group in
       for _ in 0..<4 {
         group.addTask {
-          let result = try roundTrip(
+          let result = try await roundTrip(
             command: "/bin/sh",
             arguments: ["-c", "dd if=/dev/zero bs=16384 count=32 >&2 2>/dev/null; printf done"],
             input: Data())
@@ -274,6 +277,17 @@ private func receive(_ connection: BridgeConnection) throws -> [BridgeFrame] {
 }
 
 private func roundTrip(
+  command: String, arguments: [String], input: Data, invocation: [String] = [],
+  environment: [String: String] = [:], allowed: [String] = []
+) async throws -> (output: Data, error: Data, termination: BridgeTermination) {
+  try await blockingIO {
+    try roundTripBlocking(
+      command: command, arguments: arguments, input: input, invocation: invocation,
+      environment: environment, allowed: allowed)
+  }
+}
+
+private func roundTripBlocking(
   command: String, arguments: [String], input: Data, invocation: [String] = [],
   environment: [String: String] = [:], allowed: [String] = []
 ) throws -> (output: Data, error: Data, termination: BridgeTermination) {
