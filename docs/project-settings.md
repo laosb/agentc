@@ -49,6 +49,7 @@ All fields are optional. Only the values you specify take effect.
     "environment": {
       "<name>": "<value>"
     },
+    "socks5Proxy": "socks5://HOST:PORT",
     "defaultArguments": ["<string>", ...],
     "additionalArguments": ["<string>", ...],
     "cpus": "<int>",
@@ -85,6 +86,7 @@ All fields are optional. Only the values you specify take effect.
 | `agent.configurations` | `--configurations`, `-c` | Agent configuration names to activate. |
 | `agent.additionalMounts` | `--additional-mount` | Additional host directories to mount. |
 | `agent.environment` | `--env`, `-e` | Environment variables passed to the container. |
+| `agent.socks5Proxy` | `--socks5-proxy` | Force guest IPv4 TCP and DNS through a SOCKS5 proxy; block unsupported traffic. Apple Containerization only. See [SOCKS5 networking](socks5-networking.md). |
 | `agent.defaultArguments` | positional args after `--` | Default arguments passed to the entrypoint. |
 | `agent.additionalArguments` | *(none)* | Arguments always appended to entrypoint args. |
 | `agent.cpus` | `--cpus` | Number of CPUs to allocate. |
@@ -101,7 +103,7 @@ When both CLI flags and project settings specify a value, the behavior depends o
 
 **Override** (CLI wins, project settings used as fallback):
 
-- `image`, `profile`, `mountPathScheme`, `configurations`, `cpus`, `memoryMiB`, `bootstrap`, `respectImageEntrypoint`, `docker.runtime`
+- `image`, `profile`, `mountPathScheme`, `configurations`, `cpus`, `memoryMiB`, `bootstrap`, `respectImageEntrypoint`, `socks5Proxy`, `docker.runtime`
 
 **Merge** (both sets are combined):
 

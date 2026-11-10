@@ -6,6 +6,7 @@
   import ContainerizationOS
   import Foundation
   import Logging
+  import SOCKSNetwork
   import System
 
   // MARK: - AppleContainerRuntime
@@ -28,6 +29,8 @@
     private let storagePath: URL
     private let diagnostics: StartupDiagnostics?
     private let rootfsCacheEnabled: Bool
+    private let socks5Proxy: SOCKS5Proxy?
+    private let hostMCPPort: UInt16?
     private var manager: ContainerManager?
     private var imageStore: ImageStore?
 
@@ -41,6 +44,8 @@
       self.storagePath = URL(fileURLWithPath: config.storagePath)
       self.diagnostics = config.diagnostics
       self.rootfsCacheEnabled = config.rootfsCacheEnabled
+      self.socks5Proxy = config.socks5Proxy
+      self.hostMCPPort = config.hostMCPPort
     }
 
     /// Where the image store — and with it the rootfs cache and session
@@ -107,7 +112,10 @@
       }
 
       let network: Network?
-      if #available(macOS 26.0, *) {
+      if socks5Proxy != nil {
+        // Never allocate vmnet in enforced mode, even transiently.
+        network = nil
+      } else if #available(macOS 26.0, *) {
         network = try VmnetNetwork()
       } else {
         network = nil
@@ -304,12 +312,27 @@
         throw error
       }
 
+      var networkHelper: SOCKSNetworkHelper?
+      var helperTransferred = false
+      defer {
+        if !helperTransferred { networkHelper?.stop() }
+      }
       let container: LinuxContainer
       do {
+        let socksInterface: SOCKSNetworkInterface?
+        if let socks5Proxy {
+          let helper = try await SOCKSNetworkHelper.launch(
+            proxy: socks5Proxy, hostMCPPort: hostMCPPort)
+          networkHelper = helper
+          socksInterface = try SOCKSNetworkInterface(helper: helper)
+        } else {
+          socksInterface = nil
+        }
         container = try await manager.create(
           containerID,
           image: resolvedImage,
           rootfs: rootfsMount,
+          networking: socks5Proxy == nil,
           // VM sizing is separate from cgroup limits in Containerization 0.50.
           // Keep `nproc` at the requested CPU count and reserve memory for the
           // guest kernel and vminitd beyond the container's memory limit.
@@ -323,6 +346,13 @@
 
           containerConfig.hosts = .default
           containerConfig.useInit = true
+
+          if let socksInterface {
+            // Explicitly replace the complete interface list before create()
+            // starts the VM. There is no normal NAT attachment or fallback.
+            containerConfig.interfaces = [socksInterface]
+            containerConfig.dns = DNS(nameservers: [SOCKSNetworkInterface.gateway])
+          }
 
           for relay in configuration.socketRelays {
             containerConfig.sockets.append(
@@ -389,6 +419,7 @@
       } catch {
         // Nothing was created, so there is no VM to stop — just take the session's
         // files back out and restore the terminal.
+        await networkHelper?.stopAsync()
         terminal?.tryReset()
         try? manager.releaseNetwork(containerID)
         sessionLock?.release()
@@ -403,6 +434,7 @@
         // A VM may already exist by now. Stop it before deleting its disk: pulling
         // the rootfs out from under a live VM is far worse than a leaked file.
         try? await container.stop()
+        await networkHelper?.stopAsync()
         terminal?.tryReset()
         try? manager.delete(containerID)
         sessionLock?.release()
@@ -416,14 +448,17 @@
         try? await container.resize(to: try t.size)
       }
 
-      return AppleContainerContainer(
+      let result = AppleContainerContainer(
         id: containerID,
         container: container,
         manager: manager,
         terminal: terminal,
         sessionDirectory: sessionDirectory,
-        sessionLock: sessionLock
+        sessionLock: sessionLock,
+        networkHelper: networkHelper
       )
+      helperTransferred = true
+      return result
     }
 
     // MARK: - Root filesystem
@@ -518,6 +553,7 @@
       } catch {
         failure = error
       }
+      await container.networkHelper?.stopAsync()
       do {
         try container.manager.delete(container.id)
       } catch {
@@ -602,7 +638,8 @@
         || FileManager.default.fileExists(atPath: existingCachedKernel.path)
       let action = isUpgrade ? "upgrading to" : "installing"
       Logger(label: "agentc.apple-container").info(
-        "\(action) Apple Containers default kernel (Kata \(AppleContainerDefaultKernel.kataVersion))...")
+        "\(action) Apple Containers default kernel (Kata \(AppleContainerDefaultKernel.kataVersion))..."
+      )
       let tarURL = URL(string: AppleContainerDefaultKernel.archiveURL)!
 
       let (tempFile, response) = try await URLSession.shared.download(from: tarURL)
@@ -658,6 +695,9 @@
     /// Held for the container's whole life: while this lock exists, another
     /// `agentc` reads the session directory as live rather than as leftovers.
     let sessionLock: FileLock?
+    /// Retained until VM stop, including error paths. The interface also retains
+    /// it while Virtualization owns the packet endpoint.
+    let networkHelper: SOCKSNetworkHelper?
 
     init(
       id: String,
@@ -665,7 +705,8 @@
       manager: ContainerManager,
       terminal: Terminal?,
       sessionDirectory: URL,
-      sessionLock: FileLock?
+      sessionLock: FileLock?,
+      networkHelper: SOCKSNetworkHelper? = nil
     ) {
       self.id = id
       self.underlyingContainer = container
@@ -673,7 +714,10 @@
       self.terminal = terminal
       self.sessionDirectory = sessionDirectory
       self.sessionLock = sessionLock
+      self.networkHelper = networkHelper
     }
+
+    deinit { networkHelper?.stop() }
 
     public func wait(timeoutInSeconds: Int64?) async throws -> Int32 {
       let exitStatus: ExitStatus
@@ -705,7 +749,13 @@
 
     public func stop() async throws {
       terminal?.tryReset()
-      try await underlyingContainer.stop()
+      do {
+        try await underlyingContainer.stop()
+      } catch {
+        await networkHelper?.stopAsync()
+        throw error
+      }
+      await networkHelper?.stopAsync()
     }
 
     public func resize(cols: Int, rows: Int) async throws {

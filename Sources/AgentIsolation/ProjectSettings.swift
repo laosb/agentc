@@ -41,6 +41,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     public var configurations: [String]?
     public var additionalMounts: [String]?
     public var environment: [String: String]?
+    public var socks5Proxy: String?
     public var defaultArguments: [String]?
     public var additionalArguments: [String]?
     public var cpus: Int?
@@ -67,6 +68,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       configurations: [String]? = nil,
       additionalMounts: [String]? = nil,
       environment: [String: String]? = nil,
+      socks5Proxy: String? = nil,
       defaultArguments: [String]? = nil,
       additionalArguments: [String]? = nil,
       cpus: Int? = nil,
@@ -83,6 +85,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       self.configurations = configurations
       self.additionalMounts = additionalMounts
       self.environment = environment
+      self.socks5Proxy = socks5Proxy
       self.defaultArguments = defaultArguments
       self.additionalArguments = additionalArguments
       self.cpus = cpus
@@ -96,6 +99,45 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
 
   /// The folder names to probe at each directory level, in priority order.
   private static let folderNames = [".boite", ".agentc"]
+
+  /// CLI policy loading must not silently discard a malformed network policy.
+  /// Unlike the legacy best-effort discovery API, the first present file wins,
+  /// and unreadable or malformed files fail instead of disabling restrictions.
+  public static func findValidated(from startDir: URL) throws -> ProjectSettings? {
+    var dir = startDir.standardizedFileURL
+    while true {
+      for folderName in folderNames {
+        if let settings = try loadValidated(fromFolder: dir.appendingPathComponent(folderName)) {
+          return settings
+        }
+      }
+      let parent = dir.deletingLastPathComponent()
+      if parent.path == dir.path { return nil }
+      dir = parent
+    }
+  }
+
+  public static func loadValidated(fromFolder folder: URL) throws -> ProjectSettings? {
+    let file = folder.appendingPathComponent("settings.json")
+    let data: Data
+    do {
+      data = try Data(contentsOf: file)
+    } catch {
+      let error = error as NSError
+      if error.domain == NSCocoaErrorDomain,
+        error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError
+      {
+        return nil
+      }
+      throw SOCKS5Proxy.ConfigurationError("Cannot read project settings at \(file.path).")
+    }
+    do {
+      return try JSONDecoder().decode(Self.self, from: data)
+    } catch {
+      // Do not expose config contents (which may contain credentials) in errors.
+      throw SOCKS5Proxy.ConfigurationError("Invalid project settings at \(file.path).")
+    }
+  }
 
   /// Searches upward from `startDir` for a settings file.
   ///

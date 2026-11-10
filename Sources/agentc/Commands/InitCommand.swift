@@ -39,6 +39,8 @@ struct InitCommand: AsyncParsableCommand, LoggedCommand {
   var skipContainerInit: Bool = false
 
   mutating func run() async throws {
+    // Reject invalid/credential-bearing URLs before writing a shareable config.
+    _ = try options.resolveSOCKS5Proxy()
     let targetDir: URL
     if let dir = directory {
       targetDir = URL(fileURLWithPath: dir, isDirectory: true)
@@ -129,6 +131,7 @@ struct InitCommand: AsyncParsableCommand, LoggedCommand {
           : Dictionary(
             options.env.map { ($0.key, $0.value) },
             uniquingKeysWith: { _, latest in latest }),
+        socks5Proxy: options.socks5Proxy,
         cpus: options.cpuCount ?? 1,
         memoryMiB: options.memoryLimitMiB ?? 1536,
         bootstrap: options.bootstrapScript,

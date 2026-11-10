@@ -47,7 +47,7 @@ def run_case(repo, root, mode):
     host_script = root / "host-only-mcp.py"
     host_script.write_text(HOST_MCP)
     args = [
-        str(repo / "agentc"), "acp", "--verbose",
+        os.environ.get("AGENTC_TEST_BINARY", str(repo / "agentc")), "acp", "--verbose",
         "-r", os.environ.get("AGENTC_TEST_RUNTIME", "apple-container" if sys.platform == "darwin" else "docker"),
         "-i", os.environ.get("AGENTC_TEST_IMAGE", "swift:6.4"),
         "-c", "test", "--configurations-dir", str(configs),
@@ -56,6 +56,8 @@ def run_case(repo, root, mode):
         "--bootstrap", str(Path(os.environ.get("AGENTC_TEST_BOOTSTRAP", "~/.agentc/bin/bootstrap")).expanduser().resolve()),
         "--log-file", str(root / "agent.log"),
     ]
+    if proxy := os.environ.get("AGENTC_TEST_SOCKS_PROXY"):
+        args += ["--socks5-proxy", proxy]
     if mode == "cli":
         args.append("--bridge-host-stdio-mcp")
     elif mode == "disabled":

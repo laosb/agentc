@@ -35,7 +35,8 @@ struct SharedOptions: ParsableArguments {
   @Option(
     name: .long,
     help: ArgumentHelp(
-      "Append session stdin and stdout to a file with stdin: and stdout: prefixes.", valueName: "file"),
+      "Append session stdin and stdout to a file with stdin: and stdout: prefixes.",
+      valueName: "file"),
     completion: .file())
   var stdioLogFile: String?
 
@@ -112,6 +113,13 @@ struct SharedOptions: ParsableArguments {
       valueName: "KEY=VALUE")
   )
   var env: [EnvironmentVariableOption] = []
+
+  @Option(
+    name: .long,
+    help:
+      "Force guest TCP and DNS through socks5://HOST:PORT (Apple runtime only). Other traffic is blocked."
+  )
+  var socks5Proxy: String?
 
   @Flag(name: .long, help: "Authorize configured host binaries to execute outside the container.")
   var allowHostBinaries: Bool = false
@@ -216,12 +224,12 @@ struct SharedOptions: ParsableArguments {
 
 extension SharedOptions {
   /// Load project settings from `--agentc-folder` or by searching upward from CWD.
-  func loadProjectSettings() -> ProjectSettings? {
+  func loadProjectSettings() throws -> ProjectSettings? {
     if let folder = agentcFolder, !folder.isEmpty {
-      return ProjectSettings.load(fromFolder: URL(fileURLWithPath: folder))
+      return try ProjectSettings.loadValidated(fromFolder: URL(fileURLWithPath: folder))
     }
     let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    return ProjectSettings.find(from: cwd)
+    return try ProjectSettings.findValidated(from: cwd)
   }
 }
 
@@ -395,6 +403,15 @@ extension SharedOptions {
       result[variable.key] = variable.value
     }
     return result
+  }
+
+  func resolveSOCKS5Proxy(projectSettings: ProjectSettings? = nil) throws -> SOCKS5Proxy? {
+    guard let value = socks5Proxy ?? projectSettings?.agent?.socks5Proxy else { return nil }
+    guard RuntimeChoice.resolve(explicit: runtime) == .appleContainer else {
+      throw SOCKS5Proxy.ConfigurationError(
+        "SOCKS5 enforcement requires the Apple Containerization runtime.")
+    }
+    return try SOCKS5Proxy(url: value, environment: ProcessInfo.processInfo.environment)
   }
 
   /// Resolve entrypoint arguments.

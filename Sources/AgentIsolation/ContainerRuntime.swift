@@ -125,13 +125,22 @@ public struct ContainerRuntimeConfiguration: Sendable {
   /// controls whether the *unpacked image* is reused between them.
   public var rootfsCacheEnabled: Bool
 
+  /// Enforced outside the guest; unsupported runtimes must reject it.
+  public var socks5Proxy: SOCKS5Proxy?
+
+  /// Explicit exception for agentc's authenticated host stdio MCP listener.
+  /// Proxy networking permits only gateway:port -> macOS loopback:port.
+  public var hostMCPPort: UInt16?
+
   public init(
     storagePath: String,
     endpoint: String? = nil,
     ociRuntime: String? = nil,
     warningHandler: (@Sendable (String) -> Void)? = nil,
     diagnostics: StartupDiagnostics? = nil,
-    rootfsCacheEnabled: Bool = true
+    rootfsCacheEnabled: Bool = true,
+    socks5Proxy: SOCKS5Proxy? = nil,
+    hostMCPPort: UInt16? = nil
   ) {
     self.storagePath = storagePath
     self.endpoint = endpoint
@@ -139,6 +148,8 @@ public struct ContainerRuntimeConfiguration: Sendable {
     self.warningHandler = warningHandler
     self.diagnostics = diagnostics
     self.rootfsCacheEnabled = rootfsCacheEnabled
+    self.socks5Proxy = socks5Proxy
+    self.hostMCPPort = hostMCPPort
   }
 }
 

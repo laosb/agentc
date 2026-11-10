@@ -1,10 +1,27 @@
 import ArgumentParser
 
+#if os(macOS)
+  import Darwin
+  import SOCKSNetwork
+#endif
+
 @main
 struct AgentcCommand: AsyncParsableCommand, LoggedCommand {
   @OptionGroup var logging: LoggingOptions
 
+  @Flag(help: "Print bundled third-party license notices and exit.")
+  var thirdPartyNotices = false
+
   static func main() async {
+    #if os(macOS)
+      if let status = await SOCKSNetworkHelper.runPrivateMode() {
+        Darwin.exit(status)
+      }
+    #endif
+    if Array(CommandLine.arguments.dropFirst()) == ["--third-party-notices"] {
+      print(ThirdPartyNotices.text)
+      return
+    }
     do {
       var command = try await asyncParseAsRoot()
       // ArgumentParser resolves shared option groups across the command tree,

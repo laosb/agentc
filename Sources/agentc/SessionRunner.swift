@@ -32,6 +32,7 @@ enum SessionRunner {
     var projectSettings: ProjectSettings?
     var io: ContainerConfiguration.IO
     var mcpRelayBootstrap: URL? = nil
+    var hostMCPPort: UInt16? = nil
   }
 
   /// Resolve all configuration from `options`, set up the container runtime,
@@ -63,8 +64,12 @@ enum SessionRunner {
       ? StartupDiagnostics(emit: { logger.debug("\(StartupDiagnostics.format($0))") })
       : nil
 
-    let projectSettings = context != nil ? context!.projectSettings : options.loadProjectSettings()
+    let projectSettings =
+      try context != nil ? context!.projectSettings : options.loadProjectSettings()
     let hostBinaries = projectSettings?.agent?.hostBinaries ?? []
+    // Validate before downloads/setup. Host-execution bridges remain explicit
+    // exceptions: their processes run on macOS, outside the guest network policy.
+    _ = try options.resolveSOCKS5Proxy(projectSettings: projectSettings)
     if !hostBinaries.isEmpty {
       guard options.allowHostBinaries else {
         throw BridgeError(
@@ -156,7 +161,8 @@ enum SessionRunner {
       let task = Task {
         try await dispatchToRuntime(
           options: snapshot.options, config: config, entrypoint: entrypoint,
-          projectSettings: projectSettings, diagnostics: diagnostics)
+          projectSettings: projectSettings, diagnostics: diagnostics,
+          hostMCPPort: context?.hostMCPPort)
       }
       let numbers = [SIGINT, SIGTERM]
       let previous = numbers.map { signal($0, SIG_IGN) }
@@ -179,7 +185,8 @@ enum SessionRunner {
 
     return try await dispatchToRuntime(
       options: options, config: isolationConfig, entrypoint: entrypoint,
-      projectSettings: projectSettings, diagnostics: diagnostics)
+      projectSettings: projectSettings, diagnostics: diagnostics,
+      hostMCPPort: context?.hostMCPPort)
   }
 
   // ArgumentParser wrappers are not Sendable; this immutable snapshot is only
@@ -195,7 +202,8 @@ enum SessionRunner {
     config: IsolationConfig,
     entrypoint: [String]?,
     projectSettings: ProjectSettings?,
-    diagnostics: StartupDiagnostics?
+    diagnostics: StartupDiagnostics?,
+    hostMCPPort: UInt16?
   ) async throws -> Int32 {
     let storagePath =
       FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -211,7 +219,9 @@ enum SessionRunner {
         logger.warning("\(message)")
       },
       diagnostics: diagnostics,
-      rootfsCacheEnabled: !options.noRootfsCache)
+      rootfsCacheEnabled: !options.noRootfsCache,
+      socks5Proxy: try options.resolveSOCKS5Proxy(projectSettings: projectSettings),
+      hostMCPPort: hostMCPPort)
 
     let choice = RuntimeChoice.resolve(explicit: options.runtime)
     return switch choice {

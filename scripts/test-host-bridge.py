@@ -57,6 +57,8 @@ def main():
         ]
         if runtime == "docker":
             common += ["--docker-runtime", "runc"]
+        if proxy := os.environ.get("AGENTC_TEST_SOCKS_PROXY"):
+            common += ["--socks5-proxy", proxy]
         denied = subprocess.run(common + ["--", "true"], capture_output=True, timeout=30)
         assert denied.returncode != 0 and b"--allow-host-binaries" in denied.stderr, denied
         env = os.environ.copy()

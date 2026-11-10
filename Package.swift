@@ -46,10 +46,38 @@ let package = Package(
     // Keep networking/process frameworks out of the bootstrap dependency graph.
     .target(name: "HostBridge"),
     .target(
+      name: "CSOCKSNetwork",
+      exclude: ["vendor/README.md", "vendor/lwip/COPYING"],
+      sources: [
+        "network.c",
+        "vendor/lwip/src/core/init.c", "vendor/lwip/src/core/def.c",
+        "vendor/lwip/src/core/inet_chksum.c", "vendor/lwip/src/core/ip.c",
+        "vendor/lwip/src/core/mem.c", "vendor/lwip/src/core/memp.c",
+        "vendor/lwip/src/core/netif.c", "vendor/lwip/src/core/pbuf.c",
+        "vendor/lwip/src/core/stats.c", "vendor/lwip/src/core/sys.c",
+        "vendor/lwip/src/core/tcp.c", "vendor/lwip/src/core/tcp_in.c",
+        "vendor/lwip/src/core/tcp_out.c", "vendor/lwip/src/core/timeouts.c",
+        "vendor/lwip/src/core/ipv4/etharp.c", "vendor/lwip/src/core/ipv4/ip4.c",
+        "vendor/lwip/src/core/ipv4/ip4_addr.c", "vendor/lwip/src/netif/ethernet.c",
+      ],
+      cSettings: [.headerSearchPath("port"), .headerSearchPath("vendor/lwip/src/include")]
+    ),
+    .target(
+      name: "SOCKSNetwork",
+      dependencies: [
+        "AgentIsolation",
+        .target(name: "CSOCKSNetwork", condition: .when(platforms: [.macOS])),
+      ]
+    ),
+    .target(
       name: "AgentIsolationAppleContainerRuntime",
       dependencies: [
         "AgentIsolation",
+        "SOCKSNetwork",
         .product(name: "Crypto", package: "swift-crypto"),
+        .product(
+          name: "ContainerizationExtras", package: "containerization",
+          condition: .when(platforms: [.macOS])),
         .product(
           name: "Containerization", package: "containerization",
           condition: .when(platforms: [.macOS])),
@@ -82,6 +110,7 @@ let package = Package(
       dependencies: [
         "AgentIsolation",
         "HostBridge",
+        .target(name: "SOCKSNetwork", condition: .when(platforms: [.macOS])),
         .target(
           name: "AgentIsolationAppleContainerRuntime",
           condition: .when(traits: ["ContainerRuntimeAppleContainer"])),
@@ -101,6 +130,10 @@ let package = Package(
     .testTarget(
       name: "AgentcTests",
       dependencies: ["agentc"]
+    ),
+    .testTarget(
+      name: "SOCKSNetworkTests",
+      dependencies: ["SOCKSNetwork", "AgentIsolation"]
     ),
     .testTarget(
       name: "AgentcBootstrapTests",

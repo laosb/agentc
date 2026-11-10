@@ -37,7 +37,7 @@ struct RunCommand: AsyncParsableCommand, LoggedCommand {
   var entrypointArguments: [String] = []
 
   mutating func run() async throws {
-    let projectSettings = options.loadProjectSettings()
+    let projectSettings = try options.loadProjectSettings()
     let allocateTTY = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
     let resolvedArguments = options.resolveArguments(
       entrypointArguments: entrypointArguments, projectSettings: projectSettings)

@@ -96,6 +96,16 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
         let bridgeEnabled =
           workspace != nil
           && (bridgeOverride ?? workspace?.settings?.agent?.acp?.bridgeHostStdioMcp ?? false)
+        // Proxy networking has no general route to the host. Reserve just this
+        // authenticated listener before the VM starts; all other guest TCP is
+        // still handled by SOCKS5. Non-proxy backends keep lazy listener startup.
+        let hostMCPPort: UInt16?
+        if bridgeEnabled, try options.resolveSOCKS5Proxy(projectSettings: settings) != nil {
+          if hostBridge == nil { hostBridge = try HostStdioMCPBridge() }
+          hostMCPPort = hostBridge!.port
+        } else {
+          hostMCPPort = nil
+        }
         let task = Task {
           do {
             let relay =
@@ -115,7 +125,8 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
                   stdin: ACPInput(input: input),
                   stdout: ACPOutput { continuation.yield(.backend(id, generation, $0)) },
                   stderr: ACPOutput { FileHandle.standardError.write($0) }),
-                mcpRelayBootstrap: relay))
+                mcpRelayBootstrap: relay,
+                hostMCPPort: hostMCPPort))
             continuation.yield(.ended(id, generation, "ACP backend exited with status \(code)"))
           } catch {
             continuation.yield(.ended(id, generation, "ACP backend failed: \(error)"))

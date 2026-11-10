@@ -36,6 +36,7 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
   private let client: DockerAPIClient
   private let endpoint: String
   private let logger = Logger(label: "com.agentc.docker-runtime")
+  private let hasSOCKS5Proxy: Bool
 
   /// An explicit runtime alias from configuration. Honored verbatim, never validated.
   private let configuredRuntime: String?
@@ -48,6 +49,7 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     self.client = DockerAPIClient(endpoint: self.endpoint)
     self.configuredRuntime = config.ociRuntime
     self.warningHandler = config.warningHandler
+    self.hasSOCKS5Proxy = config.socks5Proxy != nil
   }
 
   /// How bind-mount ownership presents inside a Docker container.
@@ -104,8 +106,13 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
   // MARK: - ContainerRuntime
 
   public func prepare() async throws {
+    try validateNetworking()
     try await client.ping()
     await resolveRuntimeSelection()
+  }
+
+  private func validateNetworking() throws {
+    guard !hasSOCKS5Proxy else { throw DockerRuntimeError.socks5ProxyUnsupported }
   }
 
   // MARK: - Runtime selection
@@ -272,6 +279,8 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     imageRef: String,
     configuration: ContainerConfiguration
   ) async throws -> DockerContainer {
+    // Library callers can skip prepare(); do not let that bypass enforcement.
+    try validateNetworking()
     if !configuration.socketRelays.isEmpty { try await validateHostSocketRelay() }
     let useTTY = Self.usesTTY(for: configuration.io)
 
@@ -499,6 +508,7 @@ public final class DockerContainer: ContainerRuntimeContainer, Sendable {
 // MARK: - Errors
 
 public enum DockerRuntimeError: LocalizedError {
+  case socks5ProxyUnsupported
   case dockerNotAccessible(String)
   case pullFailed(String)
   case imageNotFound(String)
@@ -510,6 +520,8 @@ public enum DockerRuntimeError: LocalizedError {
 
   public var errorDescription: String? {
     switch self {
+    case .socks5ProxyUnsupported:
+      return "Enforced SOCKS5 networking requires Apple Containerization; Docker is unsupported."
     case .dockerNotAccessible(let msg):
       return "Docker is not accessible: \(msg)"
     case .pullFailed(let msg):

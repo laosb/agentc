@@ -58,6 +58,40 @@ swift test \
   --skip AgentcIntegrationTests
 ```
 
+SOCKS5 protocol, helper-lifecycle, and configuration tests are included in the
+unit tests above. The packet-engine harness runs separately with actual lwIP and
+a deterministic mock upstream transport:
+
+```sh
+sh scripts/test-packet-engine.sh
+SANITIZE=address sh scripts/test-packet-engine.sh --control-eof
+```
+
+It checks strict Swift 6 concurrency, packet validation, backpressure, adverse
+half-close orderings, and slot recycling. The new native networking code uses
+Swift 6 concurrency; lwIP 2.2.1 is vendored, so no Go toolchain or extra executable
+is needed.
+
+For an opt-in real-VM proxy check on macOS, build/sign agentc and run:
+
+```sh
+./build.sh --debug
+python3 scripts/test-socks5-network.py
+```
+
+This starts a local authenticated SOCKS5 fixture serving synthetic DNS and TCP
+destinations. It checks transparent sockets, DNS, a 1 MiB transfer with half-close,
+hidden credentials, rejected traffic, and loss of connectivity when the networking
+child is killed. It defaults to `python:3.13-slim`; use `AGENTC_TEST_SOCKS_IMAGE` to
+select another image with `/usr/local/bin/python3`. Host image/kernel downloads
+may still access the internet; the fixture itself never does.
+
+Existing bridge smoke tests accept `AGENTC_TEST_SOCKS_PROXY=socks5://HOST:PORT` to
+exercise their compatibility with enforced proxy networking. Host execution
+remains outside the guest network policy. The MCP test's host relay can work even
+with an unreachable upstream proxy; its explicitly permitted local connection is
+independent of internet connectivity.
+
 On macOS, enable both runtime traits when working on Apple Containerization code:
 
 ```sh
