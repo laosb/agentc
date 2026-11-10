@@ -126,9 +126,9 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     do {
       data = try Data(contentsOf: file)
     } catch {
-      let error = error as NSError
-      if error.domain == NSCocoaErrorDomain,
-        error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError
+      // CocoaError is available in FoundationEssentials, including static Linux.
+      if let error = error as? CocoaError,
+        error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile
       {
         return nil
       }

@@ -135,6 +135,32 @@ struct ProjectSettingsDecodingTests {
 
 // MARK: - File Search Tests
 
+@Suite("ProjectSettings Validated Loading")
+struct ProjectSettingsValidatedLoadingTests {
+  @Test("Missing settings are optional, whether the folder exists or not")
+  func missingSettings() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: folder) }
+
+    #expect(try ProjectSettings.loadValidated(fromFolder: folder) == nil)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    #expect(try ProjectSettings.loadValidated(fromFolder: folder) == nil)
+  }
+
+  @Test("Read failures other than a missing file do not disable policy")
+  func unreadableSettings() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    // A directory is unreadable as Data even when tests run as root.
+    try FileManager.default.createDirectory(
+      at: folder.appendingPathComponent("settings.json"), withIntermediateDirectories: true)
+
+    #expect(throws: SOCKS5Proxy.ConfigurationError.self) {
+      try ProjectSettings.loadValidated(fromFolder: folder)
+    }
+  }
+}
+
 @Suite("ProjectSettings Search")
 struct ProjectSettingsSearchTests {
 
