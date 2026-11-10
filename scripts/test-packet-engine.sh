@@ -3,6 +3,8 @@
 # double. Does not require building the container runtime or editing Package.swift.
 set -eu
 cd "$(dirname "$0")/.."
+# Standalone Swift toolchains do not infer Xcode's SDK for clang.
+sdk="$(xcrun --sdk macosx --show-sdk-path)"
 build=.build/packet-engine-tests
 harness=Tests/PacketEngineHarness/PacketEngineHarness.swift
 if [ "${1-}" = "--readiness" ]; then
@@ -30,15 +32,16 @@ for file in Sources/CSOCKSNetwork/network.c \
   "$vendor"/src/netif/ethernet.c
 do
   clang -g -O1 -Wall -Wextra -Werror ${SANITIZE:+-fsanitize=$SANITIZE} \
+    -isysroot "$sdk" \
     -I Sources/CSOCKSNetwork/include -I Sources/CSOCKSNetwork/port \
     -I "$vendor/src/include" -c "$file" -o "$build/objects/$(basename "$file").o"
 done
-swiftc -swift-version 6 -strict-concurrency=complete \
+swiftc -sdk "$sdk" -swift-version 6 -strict-concurrency=complete \
   -emit-module -emit-library -module-name AgentIsolation \
   Sources/AgentIsolation/SOCKS5Proxy.swift Sources/AgentIsolation/SOCKS5DNS.swift \
   -o "$build/libAgentIsolation.dylib" \
   -emit-module-path "$build/AgentIsolation.swiftmodule"
-swiftc -g -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
+swiftc -sdk "$sdk" -g -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
   ${SANITIZE:+-sanitize=$SANITIZE} -parse-as-library \
   -I "$build" -I "$build/CSOCKSNetwork" -L "$build" -lAgentIsolation \
   -Xlinker -rpath -Xlinker "$(pwd)/$build" \
