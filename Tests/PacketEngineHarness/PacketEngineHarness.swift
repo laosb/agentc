@@ -37,6 +37,26 @@ private func tcp(
   return b
 }
 
+private func udp(
+  destination: UInt32 = 0xcb00_7107, port: UInt16 = 9000,
+  sourcePort: UInt16 = 45000, payload: [UInt8]
+) -> [UInt8] {
+  let tuple = Packet.Tuple(guestPort: sourcePort, destination: destination, destinationPort: port)
+  var b = Packet.Datagram(tuple: tuple, payload: []).response(payload)!
+  b.replaceSubrange(0..<6, with: Packet.gatewayMAC)
+  b.replaceSubrange(6..<12, with: Packet.guestMAC)
+  Packet.put32(Packet.guest, &b, 26)
+  Packet.put32(destination, &b, 30)
+  Packet.put16(sourcePort, &b, 34)
+  Packet.put16(port, &b, 36)
+  Packet.put16(0, &b, 24)
+  Packet.put16(Packet.checksum(b[14..<34]), &b, 24)
+  Packet.put16(0, &b, 40)
+  let checksum = Packet.transportChecksum(b)
+  Packet.put16(checksum == 0 ? 0xffff : checksum, &b, 40)
+  return b
+}
+
 private func send(_ bytes: [UInt8], _ fd: Int32) throws {
   let count = bytes.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) }
   try require(count == bytes.count, "send failed: \(errno)")
@@ -131,6 +151,23 @@ private func packetUnitTests() throws {
   try require(
     Packet.DNSQuery(port: 41000, message: compressed) == nil,
     "compressed DNS query name accepted")
+  for size in [0, 1, 1472] {
+    let payload = [UInt8](repeating: 0xab, count: size)
+    guard case .udp(let datagram) = Packet.inbound(udp(payload: payload)),
+      let reply = datagram.response(payload)
+    else { throw Failure.invalid("valid UDP datagram rejected") }
+    try require(datagram.payload == payload, "UDP payload boundaries")
+    try require(
+      reply.count == 42 + size && Packet.transportChecksum(reply) == 0,
+      "UDP reply size/checksum")
+  }
+  var corruptUDP = udp(payload: [1, 2, 3])
+  corruptUDP[42] ^= 1
+  try require(Packet.inbound(corruptUDP) == nil, "corrupt UDP checksum accepted")
+  Packet.put16(0, &corruptUDP, 40)
+  try require(Packet.inbound(corruptUDP) != nil, "optional IPv4 UDP checksum rejected")
+  try require(Packet.inbound(udp(port: 0, payload: [])) == nil, "zero destination UDP port")
+  try require(Packet.inbound(udp(sourcePort: 0, payload: [])) == nil, "zero source UDP port")
   // Deterministic malformed-input sweep exercises every short header boundary.
   var state: UInt64 = 0x1234_5678
   for index in 0..<10000 {
@@ -318,6 +355,40 @@ private func repeatedRefusals(_ fd: Int32) async throws {
   }
 }
 
+private func udpForwarding(_ fd: Int32) async throws {
+  // Each guest source port gets a distinct association even with the same peer.
+  for source: UInt16 in [45000, 45001] {
+    for payload in [[], [1, 2, 3], [UInt8](repeating: 0xab, count: 1472)] {
+      try await sendEventually(udp(sourcePort: source, payload: payload), fd)
+      var reply: [UInt8] = []
+      for _ in 0..<100 {
+        let frame = try await receive(fd)
+        if frame.count >= 42 && frame[23] == 17 && Packet.u16(frame, 36) == source {
+          reply = frame
+          break
+        }
+      }
+      try require(reply.count == 42 + payload.count, "UDP datagram length")
+      try require(Array(reply.dropFirst(42)) == payload, "UDP payload isolation")
+      try require(
+        Packet.u32(reply, 26) == 0xcb00_7107 && Packet.u16(reply, 34) == 9000,
+        "UDP original peer source")
+      try require(Packet.transportChecksum(reply) == 0, "UDP packet checksum")
+    }
+  }
+  try require(
+    await MockUDPAssociations.shared.destinations.count == 2,
+    "UDP associations must be distinct per guest tuple")
+  // Flood new tuples beyond the pool; no unbounded association/task allocation.
+  for source: UInt16 in 45100..<45180 {
+    try await sendEventually(udp(sourcePort: source, payload: [0]), fd)
+  }
+  try await Task.sleep(for: .milliseconds(300))
+  try require(
+    await MockUDPAssociations.shared.destinations.count == 64,
+    "UDP flow count must be capped at64")
+}
+
 @main
 struct PacketEngineHarness {
   static func main() async throws {
@@ -331,7 +402,9 @@ struct PacketEngineHarness {
     }
     let childPacket = packet[1]
     let childControl = control[1]
-    let proxy = try SOCKS5Proxy(url: "socks5://127.0.0.1:1080")
+    let proxy = try SOCKS5Proxy(
+      url: "socks5://127.0.0.1:1080",
+      dns: SOCKS5DNS(url: "tcp://198.51.100.53:5353"))
     let task = Task {
       try await SOCKSNetworkEngine.run(
         proxy: proxy, packetFD: childPacket, controlFD: childControl, hostMCPPort: 9123)
@@ -423,11 +496,11 @@ struct PacketEngineHarness {
     let destinations = await MockConnections.shared.destinations
     try require(destinations.contains("203.0.113.7:443"), "SOCKS original destination")
     try require(destinations.contains("HOST-MCP:9123"), "MCP exception")
-    try require(destinations.contains("1.1.1.1:53"), "fixed DNS resolver")
+    try require(destinations.contains("198.51.100.53:5353"), "configured DNS resolver")
 
     // TCP fallback uses the gateway service, but CONNECT targets the fixed
     // resolver rather than asking the proxy to connect to private10.87.0.1.
-    let resolverCount = destinations.filter { $0 == "1.1.1.1:53" }.count
+    let resolverCount = destinations.filter { $0 == "198.51.100.53:5353" }.count
     try send(
       tcp(
         destination: Packet.gateway, port: 53, sourcePort: 40006,
@@ -448,8 +521,10 @@ struct PacketEngineHarness {
     try require(
       Packet.u32(tcpDNS, 26) == Packet.gateway && Packet.u16(tcpDNS, 34) == 53,
       "DNS TCP service reverse translation")
-    let newResolverCount = await MockConnections.shared.destinations.filter { $0 == "1.1.1.1:53" }
-      .count
+    let newResolverCount = await MockConnections.shared.destinations.filter {
+      $0 == "198.51.100.53:5353"
+    }
+    .count
     try require(newResolverCount == resolverCount + 1, "DNS TCP did not select fixed resolver")
     try send(
       tcp(
@@ -462,6 +537,7 @@ struct PacketEngineHarness {
     try await remoteHalfCloseFirst(packet[0])
     try await backpressuredLASTACK(packet[0])
     try await repeatedRefusals(packet[0])
+    try await udpForwarding(packet[0])
 
     // Either control data or peer EOF stops the child promptly.
     let start = ContinuousClock.now
@@ -477,7 +553,7 @@ struct PacketEngineHarness {
       fcntl(childPacket, F_GETFL) >= 0 && fcntl(childControl, F_GETFL) >= 0,
       "borrowed descriptors closed")
     print(
-      "PASS: packet validation/fuzz, lwIP ARP/TCP translation/echo/FIN/RST, 1MiB half-close/backpressure, remote-first FIN, backpressured LAST_ACK, 140 sequential refusals, DNS-over-TCP, MCP policy, control shutdown"
+      "PASS: packet validation/fuzz, lwIP TCP/half-close/backpressure, 140 refusals, configured DNS, UDP isolation/bounds/64-flow limit, MCP policy, control shutdown"
     )
   }
 }

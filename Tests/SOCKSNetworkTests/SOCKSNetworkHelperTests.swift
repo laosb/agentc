@@ -11,7 +11,10 @@
     func wireFormat() throws {
       let proxy = try SOCKS5Proxy(
         url: "socks5://127.0.0.1:1080",
-        environment: ["AGENTC_SOCKS5_USERNAME": "test-user", "AGENTC_SOCKS5_PASSWORD": "test-pass"])
+        environment: [
+          "AGENTC_SOCKS5_USERNAME": "test-user", "AGENTC_SOCKS5_PASSWORD": "test-pass",
+        ],
+        dns: SOCKS5DNS(url: "tcp://9.9.9.9:5353"))
       let config = SOCKSNetworkHelper.Configuration(proxy: proxy, hostMCPPort: 12345)
       try config.validate()
       let frame = try config.frame()
@@ -22,6 +25,23 @@
       try decoded.validate()
       #expect(decoded.proxy == proxy)
       #expect(decoded.hostMCPPort == 12345)
+    }
+
+    @Test("DNS wire values are validated and only an absent field uses the default")
+    func dnsWireValidation() throws {
+      let oldWire = Data(#"{"version":1,"proxy":{"host":"localhost","port":1080}}"#.utf8)
+      let oldConfig = try JSONDecoder().decode(SOCKSNetworkHelper.Configuration.self, from: oldWire)
+      try oldConfig.validate()
+      #expect(oldConfig.proxy.dns == .default)
+      for dns in [
+        "null", #"{"host":"dns.example","port":53}"#, #"{"host":"::1","port":53}"#,
+        #"{"host":"127.1","port":53}"#, #"{"host":"1.1.1.1","port":0}"#,
+      ] {
+        let json = #"{"version":1,"proxy":{"host":"localhost","port":1080,"dns":\#(dns)}}"#
+        #expect(throws: DecodingError.self) {
+          try JSONDecoder().decode(SOCKSNetworkHelper.Configuration.self, from: Data(json.utf8))
+        }
+      }
     }
 
     @Test("Decoded configuration is revalidated rather than trusting Codable")

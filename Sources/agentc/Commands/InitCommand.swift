@@ -132,6 +132,7 @@ struct InitCommand: AsyncParsableCommand, LoggedCommand {
             options.env.map { ($0.key, $0.value) },
             uniquingKeysWith: { _, latest in latest }),
         socks5Proxy: options.socks5Proxy,
+        socks5Dns: options.socks5Dns,
         cpus: options.cpuCount ?? 1,
         memoryMiB: options.memoryLimitMiB ?? 1536,
         bootstrap: options.bootstrapScript,

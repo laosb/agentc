@@ -229,6 +229,11 @@
             (1...255).contains($0.utf8.count) && !$0.contains("\0")
           })
         else { throw HelperError.invalidConfiguration }
+        // Use the same strict numeric endpoint rule as CLI and decoding; never
+        // accept a DNS hostname that would trigger a host resolver lookup.
+        guard let dns = try? SOCKS5DNS(url: "tcp://\(proxy.dns.host):\(proxy.dns.port)"),
+          dns == proxy.dns
+        else { throw HelperError.invalidConfiguration }
       }
 
       func frame() throws -> Data {

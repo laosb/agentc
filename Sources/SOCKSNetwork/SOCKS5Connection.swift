@@ -23,6 +23,8 @@
       case malformedReply
       case authenticationRejected
       case connectRejected(UInt8)
+      case associateRejected(UInt8)
+      case unsupportedRelay
     }
 
     /// Each call to send/receive is bounded to this many bytes.
@@ -63,6 +65,26 @@
     ) async throws -> SOCKS5Connection {
       let address = try ipv4Bytes(destination)
       guard port != 0 else { throw TransportError.invalidDestination }
+      let (transport, _) = try await establish(
+        proxy: proxy, command: .connect, address: address, port: port, timeout: timeout)
+      return transport
+    }
+
+    private enum Command: UInt8 {
+      case connect = 1
+      case associate = 3
+    }
+
+    private struct BoundAddress: Sendable {
+      let type: UInt8
+      let bytes: [UInt8]
+      let port: UInt16
+    }
+
+    /// Both commands share credential validation, authentication, deadlines and reply parsing.
+    private static func establish(
+      proxy: SOCKS5Proxy, command: Command, address: [UInt8], port: UInt16, timeout: Duration
+    ) async throws -> (SOCKS5Connection, BoundAddress) {
       guard !proxy.host.isEmpty, !proxy.host.contains("\0"), proxy.port != 0,
         (proxy.username == nil) == (proxy.password == nil)
       else { throw TransportError.invalidConfiguration }
@@ -74,12 +96,59 @@
       let transport = SOCKS5Connection(host: proxy.host, port: proxy.port, timeout: timeout)
       do {
         try await transport.start()
-        try await transport.negotiate(proxy: proxy, address: address, port: port)
+        let bound = try await transport.negotiate(
+          proxy: proxy, command: command, address: address, port: port)
         try Task.checkCancellation()
-        return transport
+        return (transport, bound)
       } catch {
         await transport.close()
         throw error
+      }
+    }
+
+    static func associateUDP(
+      proxy: SOCKS5Proxy, timeout: Duration
+    ) async throws -> (SOCKS5Connection, NWEndpoint.Host, UInt16) {
+      // The UDP socket's local address is not known yet. RFC 1928 permits all zeros.
+      let (transport, bound) = try await establish(
+        proxy: proxy, command: .associate, address: [0, 0, 0, 0], port: 0, timeout: timeout)
+      do {
+        guard bound.port != 0 else { throw TransportError.unsupportedRelay }
+        let host = try await transport.relayHost(bound)
+        try Task.checkCancellation()
+        return (transport, host, bound.port)
+      } catch {
+        await transport.close()
+        throw error
+      }
+    }
+
+    private func relayHost(_ bound: BoundAddress) throws -> NWEndpoint.Host {
+      if bound.type == 1, bound.bytes.allSatisfy({ $0 == 0 }) {
+        // Never resolve the guest address or re-resolve the proxy's configured name.
+        // Use the numeric endpoint of the TCP connection that authenticated us.
+        guard case .hostPort(let host, _) = connection.currentPath?.remoteEndpoint else {
+          throw TransportError.unsupportedRelay
+        }
+        switch host {
+        case .ipv4, .ipv6: return host
+        default: throw TransportError.unsupportedRelay
+        }
+      }
+      switch bound.type {
+      case 1:
+        guard let address = IPv4Address(Data(bound.bytes)) else {
+          throw TransportError.unsupportedRelay
+        }
+        return .ipv4(address)
+      case 4:
+        guard !bound.bytes.allSatisfy({ $0 == 0 }),
+          let address = IPv6Address(Data(bound.bytes))
+        else { throw TransportError.unsupportedRelay }
+        return .ipv6(address)
+      default:
+        // Domain relay metadata is deliberately unsupported; guest input is never DNS input.
+        throw TransportError.unsupportedRelay
       }
     }
 
@@ -283,7 +352,9 @@
       return bytes
     }
 
-    private func negotiate(proxy: SOCKS5Proxy, address: [UInt8], port: UInt16) async throws {
+    private func negotiate(
+      proxy: SOCKS5Proxy, command: Command, address: [UInt8], port: UInt16
+    ) async throws -> BoundAddress {
       // A single overall negotiation deadline also bounds a slow trickle of bytes.
       let negotiationID = UUID()
       armTimeout(negotiationID)
@@ -302,25 +373,33 @@
         guard reply[0] == 1 else { throw TransportError.malformedReply }
         guard reply[1] == 0 else { throw TransportError.authenticationRejected }
       }
-      try await send(Data([5, 1, 0, 1] + address + [UInt8(port >> 8), UInt8(port & 255)]))
+      try await send(
+        Data([5, command.rawValue, 0, 1] + address + [UInt8(port >> 8), UInt8(port & 255)]))
       let reply = try await readExactly(4)
       guard reply[0] == 5, reply[2] == 0 else { throw TransportError.malformedReply }
+      let bytes: [UInt8]
       switch reply[3] {
       case 1:
-        _ = try await readExactly(4 + 2)
+        bytes = try await readExactly(4)
       case 4:
-        _ = try await readExactly(16 + 2)
+        bytes = try await readExactly(16)
       case 3:
         let length = Int(try await readExactly(1)[0])
         guard length > 0 else { throw TransportError.malformedReply }
-        _ = try await readExactly(length + 2)
+        bytes = try await readExactly(length)
       default:
         throw TransportError.malformedReply
       }
-      guard reply[1] == 0 else { throw TransportError.connectRejected(reply[1]) }
+      let boundPort = try await readExactly(2)
+      guard reply[1] == 0 else {
+        throw command == .connect
+          ? TransportError.connectRejected(reply[1]) : TransportError.associateRejected(reply[1])
+      }
+      return BoundAddress(
+        type: reply[3], bytes: bytes, port: UInt16(boundPort[0]) << 8 | UInt16(boundPort[1]))
     }
 
-    private static func ipv4Bytes(_ destination: String) throws -> [UInt8] {
+    static func ipv4Bytes(_ destination: String) throws -> [UInt8] {
       // Reject names, IPv6, shorthand and non-ASCII input before opening a socket.
       guard destination.utf8.count <= 15 else { throw TransportError.invalidDestination }
       let parts = destination.split(separator: ".", omittingEmptySubsequences: false)

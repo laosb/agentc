@@ -11,7 +11,7 @@ Run AI coding agents in isolated containers with persistent profiles and per-pro
 - **Pluggable agents** — switch or combine agent configurations without rebuilding agentc.
 - **Bring your own image** — run on normal or minimal container images; the bootstrap and Toolkit provide the basics needed to get started.
 - **Project-aware defaults** — store agent, resource, environment, mount, and image settings in `.agentc/settings.json`.
-- **Enforced SOCKS5 networking** — on Apple Containerization, optionally route guest TCP and DNS through a host-side proxy adapter, without proxy-aware applications. See [networking scope and host-bridge exceptions](docs/socks5-networking.md).
+- **Enforced SOCKS5 networking** — on Apple Containerization, optionally route guest IPv4 TCP, UDP, and configurable DNS through a host-side proxy adapter, without proxy-aware applications. See [networking scope and host-bridge exceptions](docs/socks5-networking.md).
 
 ## Install
 

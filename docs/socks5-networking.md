@@ -12,7 +12,8 @@ Or opt in per project:
 ```json
 {
   "agent": {
-    "socks5Proxy": "socks5://127.0.0.1:1080"
+    "socks5Proxy": "socks5://127.0.0.1:1080",
+    "socks5Dns": "tcp://9.9.9.9:53"
   }
 }
 ```
@@ -27,8 +28,9 @@ back to defaults.
 
 The adapter runs **on the Mac**, in a child process of the same `agentc`
 executable. No extra binary is installed. The child handles guest Ethernet
-packets using lwIP and Swift networking code; it opens ordinary upstream TCP
-connections only to the configured SOCKS5 endpoint.
+packets using lwIP and Swift networking code. Upstream TCP connections go only
+to the configured SOCKS5 endpoint; upstream UDP goes only to the relay endpoint
+negotiated with that proxy. The authorized host-MCP exception is described below.
 
 There is no simultaneous NAT attachment. Guest root cannot restore direct
 internet access by changing routes. If the proxy or child fails, connections
@@ -50,20 +52,62 @@ do not use the Mac's resolver.
 
 - IPv4 TCP, transparently tunneled using SOCKS5 `CONNECT`.
 - Guest UDP DNS to the configured gateway resolver, forwarded as DNS-over-TCP
-  through SOCKS5 to `1.1.1.1:53`. TCP DNS to that gateway uses the same resolver,
+  through SOCKS5 to the selected upstream (`1.1.1.1:53` by default). TCP DNS to that gateway uses the same resolver,
   including fallback after a truncated UDP answer.
-- IPv6, other UDP (including QUIC/HTTP/3), ICMP, and fragmented IP traffic are
-  blocked in this first version. Applications that support it may fall back from
-  QUIC to HTTPS over TCP.
+- Other IPv4 UDP, including QUIC/HTTP/3, uses SOCKS5 `UDP ASSOCIATE` when the
+  proxy supports it. Datagram boundaries and guest source-port isolation are
+  preserved. Empty payloads and unfragmented payloads up to 1472 bytes are supported.
+- IPv6 guest traffic, ICMP, and fragmented IP traffic remain blocked.
 - TLS remains end-to-end. No interception CA is installed.
 
-The proxy must permit the relevant destination ports, including TCP port 53 for
-DNS. Custom DNS traffic over ordinary TCP follows the same SOCKS5 path as any
-other TCP connection.
+The proxy must permit the relevant destination ports, including the selected
+resolver's TCP port. DNS sent to a non-gateway address uses ordinary proxied TCP
+or UDP, not the gateway resolver override.
+
+### DNS configuration
+
+```sh
+agentc run \
+  --socks5-proxy socks5://127.0.0.1:1080 \
+  --socks5-dns tcp://9.9.9.9:53
+```
+
+`--socks5-dns` overrides `agent.socks5Dns`. It accepts a strict numeric IPv4
+address and nonzero port, not a hostname, IPv6, credentials, or URL suffixes.
+Specifying it without an effective proxy is an error. Unset retains the default.
+`agentc init` persists an explicitly supplied DNS setting.
+
+Both UDP and TCP queries to the guest gateway use this one upstream over TCP
+through SOCKS5. The guest still sees only `10.87.0.1` in its resolver settings,
+not the selected upstream. Failure never consults the host resolver or enables
+a direct DNS path. A project-configured value is naturally readable in the
+mounted project file.
+
+### UDP compatibility and limits
+
+UDP needs both SOCKS5 UDP support and a reachable relay endpoint. A TCP-only
+proxy (including ordinary OpenSSH dynamic forwarding) cannot carry UDP. Rejected
+associations drop datagrams, without changing TCP or gateway DNS behavior. An
+unsupported-command reply suppresses new association attempts for 30 seconds.
+
+Each guest source-port/destination tuple gets its own TCP control connection and
+connected UDP relay socket. Replies must match the complete expected envelope
+and peer tuple; fragmented SOCKS envelopes are not reassembled. Closing the
+control connection closes the UDP association. Numeric IPv4/IPv6 relay endpoints
+are supported (an IPv6 relay does not enable IPv6 inside the guest); domain
+relay metadata and unspecified IPv6 relay addresses are rejected. A wildcard
+IPv4 relay address uses the actual TCP proxy peer.
+
+SOCKS encapsulation adds overhead beyond the guest's packet size. Outer-network
+MTU or firewall restrictions can still cause datagram loss. On some macOS
+Network.framework versions, a malformed raw zero-byte relay datagram produces
+a transport error and closes the association; a valid empty SOCKS payload works.
 
 Resource limits are deliberately bounded: 128 TCP flows (including lwIP's
 TIME_WAIT state), 32 concurrent UDP DNS jobs, a 20-second connection deadline,
 a 15-second UDP DNS deadline, and a one-hour established inactivity timeout.
+UDP has a separate 64-flow limit, eight queued datagrams plus one in-flight send
+per flow, and 60-second idle expiry. Overflow is dropped, not buffered without bound.
 Exceeding a limit fails or drops traffic; it never enables a direct path.
 
 ## Authentication
@@ -104,3 +148,9 @@ macOS security sandbox. It runs with the user's privileges. Packet processing,
 policy, SOCKS5, and scheduling are Swift; lwIP and its narrow interop adapter are
 C. See `Sources/CSOCKSNetwork/vendor/README.md` for the pinned dependency and
 license.
+
+The engine uses coalesced readiness notifications and actor-owned TCP waiters,
+not per-connection idle polling. A 250ms timer services lwIP maintenance; bounded
+backoff handles sockets that report writable while still returning `ENOBUFS`.
+See [network benchmarks](network-benchmark.md) for reproducible throughput,
+latency, CPU, and resident-memory measurements.

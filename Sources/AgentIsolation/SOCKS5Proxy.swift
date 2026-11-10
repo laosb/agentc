@@ -10,8 +10,11 @@ public struct SOCKS5Proxy: Codable, Sendable, Equatable {
   public let port: UInt16
   public let username: String?
   public let password: String?
+  public let dns: SOCKS5DNS
 
-  public init(url: String, environment: [String: String] = [:]) throws {
+  public init(
+    url: String, environment: [String: String] = [:], dns: SOCKS5DNS = .default
+  ) throws {
     guard let parts = URLComponents(string: url),
       parts.scheme == "socks5", let host = parts.host, !host.isEmpty,
       let port = parts.port, (1...65535).contains(port),
@@ -37,6 +40,20 @@ public struct SOCKS5Proxy: Codable, Sendable, Equatable {
     self.port = UInt16(port)
     self.username = username
     self.password = password
+    self.dns = dns
+  }
+
+  private enum CodingKeys: String, CodingKey { case host, port, username, password, dns }
+
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    host = try values.decode(String.self, forKey: .host)
+    port = try values.decode(UInt16.self, forKey: .port)
+    username = try values.decodeIfPresent(String.self, forKey: .username)
+    password = try values.decodeIfPresent(String.self, forKey: .password)
+    // Older helper fixtures omit DNS. A supplied but invalid value (including
+    // null) must never silently fall back to the default resolver.
+    dns = try values.contains(.dns) ? values.decode(SOCKS5DNS.self, forKey: .dns) : .default
   }
 
   public struct ConfigurationError: Error, CustomStringConvertible, Sendable {

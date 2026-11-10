@@ -117,9 +117,15 @@ struct SharedOptions: ParsableArguments {
   @Option(
     name: .long,
     help:
-      "Force guest TCP and DNS through socks5://HOST:PORT (Apple runtime only). Other traffic is blocked."
+      "Force guest IPv4 TCP, UDP, and DNS through socks5://HOST:PORT (Apple runtime only)."
   )
   var socks5Proxy: String?
+
+  @Option(
+    name: .customLong("socks5-dns"),
+    help: "Upstream DNS through SOCKS5 as tcp://IPv4:PORT (default: tcp://1.1.1.1:53)."
+  )
+  var socks5Dns: String?
 
   @Flag(name: .long, help: "Authorize configured host binaries to execute outside the container.")
   var allowHostBinaries: Bool = false
@@ -406,12 +412,21 @@ extension SharedOptions {
   }
 
   func resolveSOCKS5Proxy(projectSettings: ProjectSettings? = nil) throws -> SOCKS5Proxy? {
-    guard let value = socks5Proxy ?? projectSettings?.agent?.socks5Proxy else { return nil }
+    let dnsURL = socks5Dns ?? projectSettings?.agent?.socks5Dns
+    guard let value = socks5Proxy ?? projectSettings?.agent?.socks5Proxy else {
+      guard dnsURL == nil else {
+        throw SOCKS5Proxy.ConfigurationError(
+          "--socks5-dns / agent.socks5Dns requires a SOCKS5 proxy (--socks5-proxy / agent.socks5Proxy)."
+        )
+      }
+      return nil
+    }
     guard RuntimeChoice.resolve(explicit: runtime) == .appleContainer else {
       throw SOCKS5Proxy.ConfigurationError(
         "SOCKS5 enforcement requires the Apple Containerization runtime.")
     }
-    return try SOCKS5Proxy(url: value, environment: ProcessInfo.processInfo.environment)
+    let dns = try dnsURL.map { try SOCKS5DNS(url: $0) } ?? .default
+    return try SOCKS5Proxy(url: value, environment: ProcessInfo.processInfo.environment, dns: dns)
   }
 
   /// Resolve entrypoint arguments.

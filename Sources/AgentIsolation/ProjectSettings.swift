@@ -42,6 +42,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     public var additionalMounts: [String]?
     public var environment: [String: String]?
     public var socks5Proxy: String?
+    public var socks5Dns: String?
     public var defaultArguments: [String]?
     public var additionalArguments: [String]?
     public var cpus: Int?
@@ -69,6 +70,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       additionalMounts: [String]? = nil,
       environment: [String: String]? = nil,
       socks5Proxy: String? = nil,
+      socks5Dns: String? = nil,
       defaultArguments: [String]? = nil,
       additionalArguments: [String]? = nil,
       cpus: Int? = nil,
@@ -86,6 +88,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
       self.additionalMounts = additionalMounts
       self.environment = environment
       self.socks5Proxy = socks5Proxy
+      self.socks5Dns = socks5Dns
       self.defaultArguments = defaultArguments
       self.additionalArguments = additionalArguments
       self.cpus = cpus

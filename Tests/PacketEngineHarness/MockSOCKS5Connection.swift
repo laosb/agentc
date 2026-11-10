@@ -14,6 +14,7 @@ actor MockConnections {
 }
 
 public actor SOCKS5Connection {
+  public enum TransportError: Error { case associateRejected(UInt8) }
   private let dns: Bool
   private let waitForFIN: Bool
   private let earlyEOF: Bool
@@ -40,7 +41,7 @@ public actor SOCKS5Connection {
     await MockConnections.shared.record("\(destination):\(port)")
     if destination == "203.0.113.9" { throw CancellationError() }
     return SOCKS5Connection(
-      dns: destination == "1.1.1.1" && port == 53,
+      dns: destination == proxy.dns.host && port == proxy.dns.port,
       waitForFIN: port == 444, earlyEOF: port == 445,
       delayedUpload: port == 446)
   }
@@ -92,4 +93,45 @@ public actor SOCKS5Connection {
     finished = true
   }
   public func close() { closed = true }
+}
+
+actor MockUDPAssociations {
+  static let shared = MockUDPAssociations()
+  private(set) var destinations: [String] = []
+  private(set) var closed = 0
+  func record(_ value: String) { destinations.append(value) }
+  func didClose() { closed += 1 }
+}
+
+public actor SOCKS5UDPAssociation {
+  public static let maximumPayloadSize = 1472
+  private var pending: [Data] = []
+  private var closed = false
+
+  public static func associate(proxy: SOCKS5Proxy, destination: String, port: UInt16) async throws
+    -> SOCKS5UDPAssociation
+  {
+    await MockUDPAssociations.shared.record("\(destination):\(port)")
+    if port == 9003 { throw SOCKS5Connection.TransportError.associateRejected(7) }
+    return SOCKS5UDPAssociation()
+  }
+
+  public func send(_ payload: Data) async throws {
+    try Task.checkCancellation()
+    guard !closed, payload.count <= Self.maximumPayloadSize else { throw CancellationError() }
+    pending.append(payload)
+  }
+
+  public func receive() async throws -> Data? {
+    while pending.isEmpty && !closed { try await Task.sleep(for: .milliseconds(2)) }
+    guard !closed else { return nil }
+    return pending.removeFirst()
+  }
+
+  public func close() async {
+    guard !closed else { return }
+    closed = true
+    pending.removeAll()
+    await MockUDPAssociations.shared.didClose()
+  }
 }

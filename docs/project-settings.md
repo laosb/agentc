@@ -50,6 +50,7 @@ All fields are optional. Only the values you specify take effect.
       "<name>": "<value>"
     },
     "socks5Proxy": "socks5://HOST:PORT",
+    "socks5Dns": "tcp://IPv4:PORT",
     "defaultArguments": ["<string>", ...],
     "additionalArguments": ["<string>", ...],
     "cpus": "<int>",
@@ -86,7 +87,8 @@ All fields are optional. Only the values you specify take effect.
 | `agent.configurations` | `--configurations`, `-c` | Agent configuration names to activate. |
 | `agent.additionalMounts` | `--additional-mount` | Additional host directories to mount. |
 | `agent.environment` | `--env`, `-e` | Environment variables passed to the container. |
-| `agent.socks5Proxy` | `--socks5-proxy` | Force guest IPv4 TCP and DNS through a SOCKS5 proxy; block unsupported traffic. Apple Containerization only. See [SOCKS5 networking](socks5-networking.md). |
+| `agent.socks5Proxy` | `--socks5-proxy` | Force guest IPv4 TCP, UDP, and DNS through a SOCKS5 proxy; block unsupported traffic. Apple Containerization only. See [SOCKS5 networking](socks5-networking.md). |
+| `agent.socks5Dns` | `--socks5-dns` | Upstream gateway DNS resolver, as `tcp://IPv4:PORT`. Defaults to `tcp://1.1.1.1:53`; requires an effective SOCKS5 proxy. Always reached through that proxy. |
 | `agent.defaultArguments` | positional args after `--` | Default arguments passed to the entrypoint. |
 | `agent.additionalArguments` | *(none)* | Arguments always appended to entrypoint args. |
 | `agent.cpus` | `--cpus` | Number of CPUs to allocate. |
@@ -103,7 +105,7 @@ When both CLI flags and project settings specify a value, the behavior depends o
 
 **Override** (CLI wins, project settings used as fallback):
 
-- `image`, `profile`, `mountPathScheme`, `configurations`, `cpus`, `memoryMiB`, `bootstrap`, `respectImageEntrypoint`, `socks5Proxy`, `docker.runtime`
+- `image`, `profile`, `mountPathScheme`, `configurations`, `cpus`, `memoryMiB`, `bootstrap`, `respectImageEntrypoint`, `socks5Proxy`, `socks5Dns`, `docker.runtime`
 
 **Merge** (both sets are combined):
 

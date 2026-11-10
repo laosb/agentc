@@ -4,6 +4,11 @@
 set -eu
 cd "$(dirname "$0")/.."
 build=.build/packet-engine-tests
+harness=Tests/PacketEngineHarness/PacketEngineHarness.swift
+if [ "${1-}" = "--readiness" ]; then
+  harness=Tests/PacketEngineHarness/ReadinessHarness.swift
+  shift
+fi
 mkdir -p "$build/objects" "$build/CSOCKSNetwork"
 cat > "$build/CSOCKSNetwork/module.modulemap" <<EOF
 module CSOCKSNetwork {
@@ -30,7 +35,8 @@ do
 done
 swiftc -swift-version 6 -strict-concurrency=complete \
   -emit-module -emit-library -module-name AgentIsolation \
-  Sources/AgentIsolation/SOCKS5Proxy.swift -o "$build/libAgentIsolation.dylib" \
+  Sources/AgentIsolation/SOCKS5Proxy.swift Sources/AgentIsolation/SOCKS5DNS.swift \
+  -o "$build/libAgentIsolation.dylib" \
   -emit-module-path "$build/AgentIsolation.swiftmodule"
 swiftc -g -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
   ${SANITIZE:+-sanitize=$SANITIZE} -parse-as-library \
@@ -39,6 +45,6 @@ swiftc -g -swift-version 6 -strict-concurrency=complete -warnings-as-errors \
   Sources/SOCKSNetwork/Packet.swift Sources/SOCKSNetwork/LWIPOutput.swift \
   Sources/SOCKSNetwork/SOCKSNetworkEngine.swift \
   Tests/PacketEngineHarness/MockSOCKS5Connection.swift \
-  Tests/PacketEngineHarness/PacketEngineHarness.swift "$build"/objects/*.o \
+  "$harness" "$build"/objects/*.o \
   -o "$build/packet-engine-tests"
 "$build/packet-engine-tests" "$@"

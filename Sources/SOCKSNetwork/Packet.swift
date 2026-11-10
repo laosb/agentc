@@ -1,7 +1,7 @@
 import Foundation
 
 /// The child's complete guest-facing packet policy. Unsupported EtherTypes,
-/// IPv4 options, fragments, ICMP, IPv6, and non-gateway UDP are dropped.
+/// IPv4 options, fragments, ICMP, and IPv6 are dropped.
 /// Checksums are verified before any address translation is permitted.
 enum Packet {
   static let guest: UInt32 = 0x0a57_0002
@@ -23,6 +23,7 @@ enum Packet {
     case arp([UInt8])
     case tcp([UInt8], Tuple, syn: Bool)
     case dns(DNSQuery)
+    case udp(Datagram)
   }
 
   static func u16(_ b: [UInt8], _ offset: Int) -> UInt16 {
@@ -104,12 +105,21 @@ enum Packet {
       // the existing mapping; ACK/RST/FIN never allocate state.
       return .tcp(b, tuple, syn: b[47] & 0x17 == 0x02)
     case 17:
-      guard b.count >= 54, destination == gateway, u16(b, 36) == 53,
-        u16(b, 34) != 0, Int(u16(b, 38)) == b.count - 34,
-        u16(b, 40) == 0 || transportChecksum(b) == 0,
-        let query = DNSQuery(port: u16(b, 34), message: Array(b[42...]))
+      guard b.count >= 42, u16(b, 34) != 0, u16(b, 36) != 0,
+        Int(u16(b, 38)) == b.count - 34,
+        u16(b, 40) == 0 || transportChecksum(b) == 0
       else { return nil }
-      return .dns(query)
+      let payload = Array(b.dropFirst(42))
+      if destination == gateway && u16(b, 36) == 53 {
+        guard let query = DNSQuery(port: u16(b, 34), message: payload) else { return nil }
+        return .dns(query)
+      }
+      return .udp(
+        Datagram(
+          tuple: Tuple(
+            guestPort: u16(b, 34), destination: destination,
+            destinationPort: u16(b, 36)),
+          payload: payload))
     default:
       return nil
     }
@@ -140,6 +150,34 @@ enum Packet {
     put16(checksum(b[14..<34]), &b, 24)
     put16(0, &b, 50)
     put16(transportChecksum(b), &b, 50)
+  }
+
+  struct Datagram: Sendable {
+    // An unfragmented IPv4 UDP packet on the guest's MTU1500 interface.
+    static let maximumPayloadSize = 1472
+    let tuple: Tuple
+    let payload: [UInt8]
+
+    /// Construct a reply from the original destination, not the relay endpoint.
+    func response(_ payload: [UInt8]) -> [UInt8]? {
+      guard payload.count <= Self.maximumPayloadSize else { return nil }
+      var b = guestMAC + gatewayMAC + [0x08, 0x00]
+      b += [UInt8](repeating: 0, count: 28)
+      b[14] = 0x45
+      put16(UInt16(28 + payload.count), &b, 16)
+      b[22] = 64
+      b[23] = 17
+      put32(tuple.destination, &b, 26)
+      put32(guest, &b, 30)
+      put16(checksum(b[14..<34]), &b, 24)
+      put16(tuple.destinationPort, &b, 34)
+      put16(tuple.guestPort, &b, 36)
+      put16(UInt16(8 + payload.count), &b, 38)
+      b += payload
+      let sum = transportChecksum(b)
+      put16(sum == 0 ? 0xffff : sum, &b, 40)
+      return b
+    }
   }
 
   struct DNSQuery: Sendable {
@@ -180,22 +218,10 @@ enum Packet {
         payload[3] = answer[3]
         for offset in [6, 8, 10] { put16(0, &payload, offset) }
       }
-      var b = guestMAC + gatewayMAC + [0x08, 0x00]
-      b += [UInt8](repeating: 0, count: 28)
-      b[14] = 0x45
-      put16(UInt16(28 + payload.count), &b, 16)
-      b[22] = 64
-      b[23] = 17
-      put32(gateway, &b, 26)
-      put32(guest, &b, 30)
-      put16(checksum(b[14..<34]), &b, 24)
-      put16(53, &b, 34)
-      put16(port, &b, 36)
-      put16(UInt16(8 + payload.count), &b, 38)
-      b += payload
-      let sum = transportChecksum(b)
-      put16(sum == 0 ? 0xffff : sum, &b, 40)
-      return b
+      return Datagram(
+        tuple: Tuple(guestPort: port, destination: gateway, destinationPort: 53),
+        payload: []
+      ).response(payload)
     }
   }
 }

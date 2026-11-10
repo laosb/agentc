@@ -5,6 +5,7 @@ Run on macOS:
 ```sh
 sh scripts/test-packet-engine.sh
 SANITIZE=address sh scripts/test-packet-engine.sh --control-eof
+SANITIZE=address sh scripts/test-packet-engine.sh --readiness --control-eof
 ```
 
 This compiles the production Swift packet engine with Swift 6 complete
@@ -13,6 +14,11 @@ sources with C warnings as errors, and a deterministic **mock SOCKS transport**.
 It does not exercise real SOCKS socket IO, authentication, Virtualization,
 guest kernel TCP, or VM startup. The separate SOCKS transport tests and real-VM
 integration test must cover those boundaries.
+
+`--readiness` selects the separate scheduling harness. It tests bounded/coalesced
+notifications, idle CPU, quiet cancellation/control EOF, and an async Dispatch
+cancellation barrier before descriptor reuse. `--readiness-failure` exercises
+cleanup when the parent cannot receive the readiness byte.
 
 The standalone test covers:
 
@@ -26,8 +32,10 @@ The standalone test covers:
 - Backpressured upload and guest FIN, then upstream EOF and immediate guest
   ACK of LAST_ACK: PCB destruction must not cancel the still-draining upload.
 - 140 sequential refusals, exceeding the 128-slot table without exhaustion.
-- UDP DNS translated into framed TCP to the fixed SOCKS resolver, oversized
+- UDP DNS translated into framed TCP to a configured non-default SOCKS resolver, oversized
   reply truncation, and guest TCP DNS fallback to that same resolver.
+- Generic UDP datagram boundaries/checksums, empty/1472-byte payloads, distinct
+  associations for two guest source ports, and the 64-flow association cap.
 - The exact gateway-address/host-MCP-port exception.
 - Readiness, control input or EOF shutdown, and borrowed descriptor ownership.
 
@@ -46,6 +54,8 @@ with `tcp_recved`. A single copied upload prefix is held across a socket await.
 The global output queue holds at most 256 MTU-sized frames; overflow drops frames
 rather than allocating without bound. Socket IO and per-turn frame work are
 nonblocking/bounded. DNS-over-TCP answers are bounded by their 16-bit length.
+UDP has a separate pool of 64 associations, each with eight queued datagrams and
+at most one in-flight send. Inactive associations expire after 60 seconds.
 
 Mappings remain allocated while lwIP owns a PCB (including TIME_WAIT) or output
 still references the translated port. PCB destruction is distinct from upstream
@@ -57,10 +67,10 @@ shorter. These are resource limits, not promises of indefinitely idle connection
 
 ## Intentionally unsupported
 
-IPv6, ICMP, non-DNS UDP, IPv4 fragments/options, VLAN frames, and compressed DNS
-query names are dropped. Only IPv4 TCP is transparently proxied. UDP DNS is
-accepted only at `10.87.0.1:53`; it and TCP DNS at that same endpoint use SOCKS
-CONNECT to `1.1.1.1:53`. Oversized DNS UDP answers return a complete TC response
+IPv6, ICMP, IPv4 fragments/options, VLAN frames, and compressed gateway DNS
+query names are dropped. IPv4 TCP and UDP are transparently proxied. DNS
+at `10.87.0.1:53` (both UDP and TCP) uses SOCKS CONNECT to the configured
+upstream (`1.1.1.1:53` by default). Oversized DNS UDP answers return a complete TC response
 so the guest can retry TCP. The only direct host socket exception is the exact
 configured MCP port at the gateway, connected to host `127.0.0.1`; ports 0 and 53
 are invalid MCP settings. No guest-selected hostname reaches the host resolver.

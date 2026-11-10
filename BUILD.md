@@ -65,10 +65,14 @@ a deterministic mock upstream transport:
 ```sh
 sh scripts/test-packet-engine.sh
 SANITIZE=address sh scripts/test-packet-engine.sh --control-eof
+SANITIZE=address sh scripts/test-packet-engine.sh --readiness --control-eof
 ```
 
 It checks strict Swift 6 concurrency, packet validation, backpressure, adverse
-half-close orderings, and slot recycling. The new native networking code uses
+half-close orderings, and slot recycling. The readiness harness additionally
+checks coalesced wakeups, quiet cancellation, and Dispatch-source cancellation
+completion before borrowed file descriptors can be closed/reused.
+The new native networking code uses
 Swift 6 concurrency; lwIP 2.2.1 is vendored, so no Go toolchain or extra executable
 is needed.
 
@@ -79,10 +83,12 @@ For an opt-in real-VM proxy check on macOS, build/sign agentc and run:
 python3 scripts/test-socks5-network.py
 ```
 
-This starts a local authenticated SOCKS5 fixture serving synthetic DNS and TCP
-destinations. It checks transparent sockets, DNS, a 1 MiB transfer with half-close,
-hidden credentials, rejected traffic, and loss of connectivity when the networking
-child is killed. It defaults to `python:3.13-slim`; use `AGENTC_TEST_SOCKS_IMAGE` to
+This starts a local authenticated SOCKS5 fixture serving synthetic DNS, TCP, and
+UDP destinations. It checks configured UDP/TCP gateway DNS, a 1 MiB TCP transfer,
+UDP boundaries/empty/max payloads/source-port isolation, hidden credentials,
+rejected traffic, UDP control-connection failure, and loss of connectivity when the
+networking child is killed. Additional VM cases verify TCP-only and policy-rejecting
+proxies fail closed for UDP. It defaults to `python:3.13-slim`; use `AGENTC_TEST_SOCKS_IMAGE` to
 select another image with `/usr/local/bin/python3`. Host image/kernel downloads
 may still access the internet; the fixture itself never does.
 
@@ -91,6 +97,10 @@ exercise their compatibility with enforced proxy networking. Host execution
 remains outside the guest network policy. The MCP test's host relay can work even
 with an unreachable upstream proxy; its explicitly permitted local connection is
 independent of internet connectivity.
+
+For local NAT-versus-proxy throughput, RTT, helper CPU, and RSS measurements, see
+[the network benchmark guide](docs/network-benchmark.md). Measure release binaries
+for shipping performance; keep debug/release results separate.
 
 On macOS, enable both runtime traits when working on Apple Containerization code:
 

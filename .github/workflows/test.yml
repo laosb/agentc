@@ -60,7 +60,13 @@ jobs:
             spm-unit-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Run unit tests
-        run: swift test --disable-default-traits --traits "${{ matrix.traits }}" --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests|AgentIsolationAppleContainerRuntimeTests|AgentcBootstrapTests|AgentcTests'
+        run: swift test --disable-default-traits --traits "${{ matrix.traits }}" --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests|AgentIsolationAppleContainerRuntimeTests|AgentcBootstrapTests|AgentcTests|SOCKSNetworkTests'
+
+      - name: Check packet engine and readiness under AddressSanitizer
+        if: runner.os == 'macOS'
+        run: |
+          SANITIZE=address sh scripts/test-packet-engine.sh --control-eof
+          SANITIZE=address sh scripts/test-packet-engine.sh --readiness --control-eof
 
   # End-to-end coverage for the hardened runtimes the Docker adapter prefers over `runc`.
   # Each job installs one runtime on the runner's Docker daemon and then asserts that

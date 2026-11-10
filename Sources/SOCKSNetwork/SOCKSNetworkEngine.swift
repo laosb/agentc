@@ -28,6 +28,15 @@
   /// Every lwIP entry point (including timers and callbacks) executes on this
   /// actor. Network awaits are reentrant; no raw pointer crosses an await.
   private actor PacketEngine {
+    private enum WaitReason {
+      case upload, capacity, retry
+    }
+
+    private struct Waiter {
+      let reason: WaitReason
+      let continuation: CheckedContinuation<Void, Never>
+    }
+
     private struct Flow {
       let tuple: Packet.Tuple
       let generation: UInt64
@@ -40,12 +49,26 @@
       var downstreamFinished = false
       var connection: SOCKS5Connection?
       var tasks: [Task<Void, Never>] = []
+      var uploadWaiter: Waiter?
+      var downloadWaiter: Waiter?
     }
 
     private struct DNSJob {
       let created: ContinuousClock.Instant
       let task: Task<Void, Never>
       var connection: SOCKS5Connection?
+    }
+
+    private struct UDPFlow {
+      let generation: UInt64
+      let created: ContinuousClock.Instant
+      var activity: ContinuousClock.Instant
+      var association: SOCKS5UDPAssociation?
+      // At most eight waiting datagrams plus one in-flight send per flow.
+      var pending: [Data]
+      var connecting: Task<Void, Never>?
+      var sending: Task<Void, Never>?
+      var receiving: Task<Void, Never>?
     }
 
     private let proxy: SOCKS5Proxy
@@ -57,8 +80,12 @@
     private var flows: [UInt32: Flow] = [:]
     private var tuples: [Packet.Tuple: UInt32] = [:]
     private var dns: [UInt64: DNSJob] = [:]
+    private var udpFlows: [Packet.Tuple: UDPFlow] = [:]
+    private var udpUnavailableUntil: ContinuousClock.Instant?
     private var serial: UInt64 = 0
     private var stopped = false
+    private var wakeups: PacketEngineWakeups?
+    private var progress: UInt64 = 0
 
     init(proxy: SOCKS5Proxy, packetFD: Int32, controlFD: Int32, hostMCPPort: UInt16?) {
       self.proxy = proxy
@@ -92,14 +119,34 @@
           == 0
       else { throw PacketEngineError.system(errno) }
       guard output.initialize() else { throw PacketEngineError.alreadyInitialized }
-      defer { shutdown() }
-      // One byte only, after the stack and both nonblocking channels are ready.
-      var ready: UInt8 = 1
-      guard Darwin.send(controlFD, &ready, 1, 0) == 1 else {
-        throw PacketEngineError.system(errno)
+      let wakeups = PacketEngineWakeups(packetFD: packetFD, controlFD: controlFD)
+      self.wakeups = wakeups
+      defer { self.wakeups = nil }
+      do {
+        wakeups.armReads()
+        // One byte only, after the stack and both nonblocking channels are ready.
+        var ready: UInt8 = 1
+        guard Darwin.send(controlFD, &ready, 1, 0) == 1 else {
+          throw PacketEngineError.system(errno)
+        }
+        try await withTaskCancellationHandler {
+          try await eventLoop(wakeups)
+        } onCancel: {
+          // Finishing the mailbox wakes a quiet engine, even without any FD input.
+          wakeups.stop()
+        }
+      } catch {
+        await shutdown()
+        throw error
       }
+      await shutdown()
+    }
+
+    private func eventLoop(_ wakeups: PacketEngineWakeups) async throws {
       var buffer = [UInt8](repeating: 0, count: 1515)
-      while !Task.isCancelled {
+      for await _ in wakeups.stream {
+        guard !Task.isCancelled else { return }
+        let events = wakeups.takeEvents()
         var control: UInt8 = 0
         let count = Darwin.recv(controlFD, &control, 1, 0)
         if count >= 0 { return }
@@ -108,20 +155,29 @@
         }
         // Work per turn is bounded so a saturated guest cannot starve control
         // EOF, cancellation, timers, or the proxy socket completion tasks.
+        var inputProgress = false
         for _ in 0..<64 {
           let count = buffer.withUnsafeMutableBytes {
             Darwin.recv(packetFD, $0.baseAddress, $0.count, 0)
           }
           if count < 0 {
-            if errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR { break }
+            if errno == EINTR { continue }
+            if errno == EAGAIN || errno == EWOULDBLOCK { break }
             throw PacketEngineError.system(errno)
           }
+          inputProgress = true
           if count <= 1514 { process(Array(buffer.prefix(count))) }
         }
-        agentc_lwip_tick()
+        // Rearming level readiness reschedules a bounded turn if the input
+        // budget was exhausted; neither descriptor is polled while idle.
+        wakeups.armReads()
+        if events.contains(.timer) { agentc_lwip_tick() }
         maintain()
+        resumeWaiters(retry: inputProgress || events.contains(.timer))
         try flush()
-        try await Task.sleep(for: .milliseconds(5))
+        // next() can complete synchronously when the mailbox is already full.
+        // Explicitly yield so sustained packet input cannot monopolize the actor.
+        await Task.yield()
       }
     }
 
@@ -153,6 +209,8 @@
         let id = serial
         let task = Task { await self.resolve(query, id: id) }
         dns[id] = DNSJob(created: clock.now, task: task)
+      case .udp(let datagram):
+        enqueue(datagram)
       }
     }
 
@@ -160,7 +218,10 @@
 
     private func flush() throws {
       for _ in 0..<256 {
-        guard let frame = output.next else { return }
+        guard let frame = output.next else {
+          wakeups?.outputDrained()
+          return
+        }
         var translated = frame
         if frame.count >= 54 && Packet.u16(frame, 12) == 0x0800 && frame[23] == 6 {
           let port = Packet.u16(frame, 34)
@@ -180,12 +241,18 @@
           // Darwin's connected AF_UNIX datagram socket can report ENOBUFS
           // rather than EAGAIN when the peer's receive queue is full.
           if errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOBUFS || errno == EINTR {
+            wakeups?.outputBlocked()
             return
           }
           throw PacketEngineError.system(errno)
         }
         guard sent == translated.count else { throw PacketEngineError.system(EIO) }
         output.removeFirst()
+      }
+      if output.next != nil {
+        wakeups?.signal()
+      } else {
+        wakeups?.outputDrained()
       }
     }
 
@@ -220,12 +287,64 @@
         if let connection = job.connection { Task { await connection.close() } }
         dns.removeValue(forKey: id)
       }
+      for (tuple, flow) in udpFlows {
+        if (flow.association == nil && flow.created.duration(to: now) > .seconds(20))
+          || flow.activity.duration(to: now) > .seconds(60)
+        {
+          retireUDP(tuple)
+        }
+      }
     }
 
     private func active(_ slot: UInt32, _ generation: UInt64) -> Bool {
       let state = agentc_lwip_state(slot)
       return !stopped && flows[slot]?.generation == generation
         && flows[slot]?.retired == nil && (state == 2 || state == 4)
+    }
+
+    private func wait(
+      _ slot: UInt32, _ generation: UInt64, for reason: WaitReason, since observed: UInt64
+    ) async {
+      guard active(slot, generation), !Task.isCancelled else { return }
+      switch reason {
+      case .upload:
+        if agentc_lwip_readable(slot) > 0 || agentc_lwip_eof(slot) != 0 { return }
+      case .capacity:
+        if agentc_lwip_send_capacity(slot) >= 16384 { return }
+      case .retry:
+        if progress != observed { return }
+      }
+      // Condition check and registration both execute on this actor without an
+      // intervening suspension. Retirement resumes both waiters before reuse.
+      await withCheckedContinuation { continuation in
+        let waiter = Waiter(reason: reason, continuation: continuation)
+        if reason == .upload {
+          precondition(flows[slot]?.uploadWaiter == nil)
+          flows[slot]?.uploadWaiter = waiter
+        } else {
+          precondition(flows[slot]?.downloadWaiter == nil)
+          flows[slot]?.downloadWaiter = waiter
+        }
+      }
+    }
+
+    private func resumeWaiters(retry: Bool) {
+      if retry { progress &+= 1 }
+      for slot in flows.keys {
+        if let waiter = flows[slot]?.uploadWaiter,
+          agentc_lwip_readable(slot) > 0 || agentc_lwip_eof(slot) != 0
+        {
+          flows[slot]?.uploadWaiter = nil
+          waiter.continuation.resume()
+        }
+        if let waiter = flows[slot]?.downloadWaiter,
+          (waiter.reason == .capacity && agentc_lwip_send_capacity(slot) >= 16384)
+            || (waiter.reason == .retry && retry)
+        {
+          flows[slot]?.downloadWaiter = nil
+          waiter.continuation.resume()
+        }
+      }
     }
 
     private func connect(slot: UInt32, generation: UInt64) async {
@@ -239,11 +358,11 @@
         } else {
           // The gateway is a DNS service, not a literal upstream host. TCP
           // fallback after a truncated UDP answer uses the same fixed resolver.
-          let destination =
-            flow.tuple.destination == Packet.gateway
-              && flow.tuple.destinationPort == 53 ? "1.1.1.1" : flow.tuple.address
+          let gatewayDNS =
+            flow.tuple.destination == Packet.gateway && flow.tuple.destinationPort == 53
           connection = try await SOCKS5Connection.connect(
-            proxy: proxy, destination: destination, port: flow.tuple.destinationPort)
+            proxy: proxy, destination: gatewayDNS ? proxy.dns.host : flow.tuple.address,
+            port: gatewayDNS ? proxy.dns.port : flow.tuple.destinationPort)
         }
         guard active(slot, generation), !Task.isCancelled else {
           await connection.close()
@@ -269,6 +388,10 @@
             guard active(slot, generation) else { return }
             agentc_lwip_consume(slot, data.count)
             flows[slot]?.activity = clock.now
+            // tcp_recved may generate a window update; freeing receive pbufs
+            // also permits a previously ERR_MEM-blocked writer to retry.
+            resumeWaiters(retry: true)
+            wakeups?.signal()
           } else if agentc_lwip_eof(slot) != 0 {
             try await connection.finishSending()
             guard active(slot, generation) else { return }
@@ -276,7 +399,7 @@
             finishIfComplete(slot)
             return
           } else {
-            try await Task.sleep(for: .milliseconds(5))
+            await wait(slot, generation, for: .upload, since: progress)
           }
         }
       } catch {
@@ -292,24 +415,26 @@
           // Never pull another proxy chunk until lwIP has acknowledged-window
           // space. At most one 16 KiB chunk is held outside its bounded sndbuf.
           guard agentc_lwip_send_capacity(slot) >= 16384 else {
-            try await Task.sleep(for: .milliseconds(5))
+            await wait(slot, generation, for: .capacity, since: progress)
             continue
           }
           guard let data = try await connection.receive(maximum: 16384) else {
             while active(slot, generation) && agentc_lwip_finish(slot) == 0 {
-              try await Task.sleep(for: .milliseconds(5))
+              await wait(slot, generation, for: .retry, since: progress)
             }
             guard active(slot, generation) else { return }
+            wakeups?.signal()
             flows[slot]?.downstreamFinished = true
             finishIfComplete(slot)
             return
           }
           guard !data.isEmpty, data.count <= 16384 else { throw PacketEngineError.stopped }
           while active(slot, generation) && !LWIPOutput.write(slot: slot, data: data) {
-            try await Task.sleep(for: .milliseconds(5))
+            await wait(slot, generation, for: .retry, since: progress)
           }
           guard active(slot, generation) else { return }
           flows[slot]?.activity = clock.now
+          wakeups?.signal()
         }
       } catch {
         if active(slot, generation) { retire(slot) }
@@ -319,6 +444,7 @@
     private func finishIfComplete(_ slot: UInt32) {
       guard let flow = flows[slot], flow.upstreamFinished, flow.downstreamFinished else { return }
       agentc_lwip_release(slot)
+      wakeups?.signal()
       if let connection = flow.connection { Task { await connection.close() } }
       flows[slot]?.connection = nil
       // The ext-arg destruction callback, not close(), decides when lwIP no
@@ -330,16 +456,129 @@
       for task in flow.tasks { task.cancel() }
       if let connection = flow.connection { Task { await connection.close() } }
       agentc_lwip_abort(slot)
+      flow.uploadWaiter?.continuation.resume()
+      flow.downloadWaiter?.continuation.resume()
       flows[slot]?.connection = nil
       flows[slot]?.tasks = []
+      flows[slot]?.uploadWaiter = nil
+      flows[slot]?.downloadWaiter = nil
       flows[slot]?.retired = clock.now
+      wakeups?.signal()
+    }
+
+    private func enqueue(_ datagram: Packet.Datagram) {
+      let tuple = datagram.tuple
+      if udpFlows[tuple] == nil {
+        guard udpUnavailableUntil.map({ clock.now >= $0 }) ?? true else { return }
+        guard udpFlows.count < 64 else { return }
+        serial &+= 1
+        let generation = serial
+        let now = clock.now
+        udpFlows[tuple] = UDPFlow(
+          generation: generation, created: now, activity: now,
+          pending: [Data(datagram.payload)])
+        udpFlows[tuple]?.connecting = Task { await self.connectUDP(tuple, generation) }
+      } else if udpFlows[tuple]!.pending.count < 8 {
+        udpFlows[tuple]?.pending.append(Data(datagram.payload))
+        udpFlows[tuple]?.activity = clock.now
+        startUDPSender(tuple)
+      }
+    }
+
+    private func activeUDP(_ tuple: Packet.Tuple, _ generation: UInt64) -> Bool {
+      !stopped && udpFlows[tuple]?.generation == generation
+    }
+
+    private func connectUDP(_ tuple: Packet.Tuple, _ generation: UInt64) async {
+      do {
+        let association = try await SOCKS5UDPAssociation.associate(
+          proxy: proxy, destination: tuple.address, port: tuple.destinationPort)
+        guard activeUDP(tuple, generation), !Task.isCancelled else {
+          await association.close()
+          return
+        }
+        udpFlows[tuple]?.association = association
+        udpFlows[tuple]?.connecting = nil
+        udpFlows[tuple]?.receiving = Task {
+          await self.receiveUDP(tuple, generation, association)
+        }
+        startUDPSender(tuple)
+      } catch {
+        guard activeUDP(tuple, generation) else { return }
+        // TCP-only proxies commonly reject command3 with REP7. Avoid a new
+        // authenticated TCP handshake for every guest datagram in that case.
+        if let error = error as? SOCKS5Connection.TransportError,
+          case .associateRejected(7) = error
+        {
+          udpUnavailableUntil = clock.now.advanced(by: .seconds(30))
+        }
+        retireUDP(tuple)
+      }
+    }
+
+    private func startUDPSender(_ tuple: Packet.Tuple) {
+      guard let flow = udpFlows[tuple], flow.sending == nil,
+        !flow.pending.isEmpty, let association = flow.association
+      else { return }
+      udpFlows[tuple]?.sending = Task {
+        await self.sendUDP(tuple, flow.generation, association)
+      }
+    }
+
+    private func sendUDP(
+      _ tuple: Packet.Tuple, _ generation: UInt64, _ association: SOCKS5UDPAssociation
+    ) async {
+      do {
+        while activeUDP(tuple, generation) && !Task.isCancelled {
+          guard !udpFlows[tuple]!.pending.isEmpty else {
+            udpFlows[tuple]?.sending = nil
+            return
+          }
+          let data = udpFlows[tuple]!.pending.removeFirst()
+          try await association.send(data)
+          guard activeUDP(tuple, generation) else { return }
+          udpFlows[tuple]?.activity = clock.now
+        }
+      } catch {
+        if activeUDP(tuple, generation) { retireUDP(tuple) }
+      }
+    }
+
+    private func receiveUDP(
+      _ tuple: Packet.Tuple, _ generation: UInt64, _ association: SOCKS5UDPAssociation
+    ) async {
+      do {
+        while activeUDP(tuple, generation) && !Task.isCancelled {
+          guard let data = try await association.receive() else {
+            if activeUDP(tuple, generation) { retireUDP(tuple) }
+            return
+          }
+          guard activeUDP(tuple, generation) else { return }
+          let datagram = Packet.Datagram(tuple: tuple, payload: [])
+          if let frame = datagram.response(Array(data)) {
+            output.append(frame)
+            wakeups?.signal()
+            udpFlows[tuple]?.activity = clock.now
+          }
+        }
+      } catch {
+        if activeUDP(tuple, generation) { retireUDP(tuple) }
+      }
+    }
+
+    private func retireUDP(_ tuple: Packet.Tuple) {
+      guard let flow = udpFlows.removeValue(forKey: tuple) else { return }
+      flow.connecting?.cancel()
+      flow.sending?.cancel()
+      flow.receiving?.cancel()
+      if let association = flow.association { Task { await association.close() } }
     }
 
     private func resolve(_ query: Packet.DNSQuery, id: UInt64) async {
       var connection: SOCKS5Connection?
       do {
         let socket = try await SOCKS5Connection.connect(
-          proxy: proxy, destination: "1.1.1.1", port: 53)
+          proxy: proxy, destination: proxy.dns.host, port: proxy.dns.port)
         connection = socket
         guard !stopped, dns[id] != nil, !Task.isCancelled else {
           await socket.close()
@@ -356,6 +595,7 @@
         let answer = try await Self.readExactly(count, from: socket)
         if !stopped, dns[id] != nil, !Task.isCancelled, let frame = query.response(answer) {
           output.append(frame)
+          wakeups?.signal()
         }
       } catch {
         // Fail closed. The guest retries/times out; never consult a host resolver.
@@ -379,14 +619,18 @@
       return bytes
     }
 
-    private func shutdown() {
+    private func shutdown() async {
       stopped = true
       for slot in Array(flows.keys) { retire(slot) }
+      for tuple in Array(udpFlows.keys) { retireUDP(tuple) }
       for job in dns.values {
         job.task.cancel()
         if let connection = job.connection { Task { await connection.close() } }
       }
       dns.removeAll()
+      // In particular, do not return to run's flag-restoring defers (or to the
+      // descriptor owner) until Dispatch's cancellation handlers have completed.
+      await wakeups?.stopAndWait()
     }
   }
 #endif

@@ -298,9 +298,9 @@
     }
   }
 
-  private enum MockError: Error { case unexpectedBytes, stopped }
+  enum MockError: Error { case unexpectedBytes, stopped }
 
-  private actor MockPeer {
+  actor MockPeer {
     let connection: NWConnection
 
     init(_ connection: NWConnection) {
@@ -375,7 +375,7 @@
     func stop() { connection.cancel() }
   }
 
-  private actor MockSOCKSServer {
+  actor MockSOCKSServer {
     nonisolated let port: UInt16
     private let listener: NWListener
     private var peers: [MockPeer] = []
