@@ -85,14 +85,20 @@ struct HostStdioMCPBridgeTests: Sendable {
     await bridge.shutdown()
   }
 
-  @Test func authenticatedByteRelayAndHostContext() async throws {
+  // Exercise a startup delay longer than the old five-second socket budget
+  // without depending on runner speed or test scheduling order.
+  @Test(arguments: [0, 6])
+  func authenticatedByteRelayAndHostContext(startupDelay: Int) async throws {
     let directory = try temporaryLogDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let bridge = try HostStdioMCPBridge()
     do {
       let definition: ACPValue = [
         "name": "host-test", "command": "/bin/sh",
-        "args": ["-c", "printf '%s\\n' \"$MCP_TEST_VALUE\"; pwd; exec cat"],
+        "args": [
+          "-c",
+          .string("sleep \(startupDelay); printf '%s\\n' \"$MCP_TEST_VALUE\"; pwd; exec cat"),
+        ],
         "env": [["name": "MCP_TEST_VALUE", "value": "literal $(not-executed)"]],
       ]
       let request: ACPProxy.Object = ["params": ["mcpServers": [definition]]]
@@ -135,6 +141,23 @@ struct HostStdioMCPBridgeTests: Sendable {
       let stalled = try connect(port: bridge.port)
       defer { _ = close(stalled) }
       try write(stalled, Array("partial".utf8))
+    } catch {
+      await bridge.shutdown()
+      throw error
+    }
+    await bridge.shutdown()
+  }
+
+  @Test func socketReadTimeoutRemainsBounded() async throws {
+    let bridge = try HostStdioMCPBridge()
+    do {
+      let socket = try connect(port: bridge.port, receiveTimeoutSeconds: 1)
+      defer { _ = close(socket) }
+      // Without authentication the bridge sends nothing. A short test-only
+      // deadline must still fail the read rather than wait for bridge shutdown.
+      await #expect(throws: ACPError.self) {
+        try await read(socket, count: 1)
+      }
     } catch {
       await bridge.shutdown()
       throw error
@@ -193,7 +216,7 @@ struct HostStdioMCPBridgeTests: Sendable {
     return token
   }
 
-  private func connect(port: UInt16) throws -> Int32 {
+  private func connect(port: UInt16, receiveTimeoutSeconds: Int = 30) throws -> Int32 {
     #if canImport(Glibc)
       let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
     #else
@@ -219,8 +242,17 @@ struct HostStdioMCPBridgeTests: Sendable {
       _ = close(fd)
       throw ACPError("connect failed")
     }
-    var timeout = timeval(tv_sec: 5, tv_usec: 0)
-    _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    // This bounds a stalled test, not MCP response latency. With concurrent
+    // tests and one cooperative worker, unrelated synchronous test bodies can
+    // take more than five seconds before the bridge's launch task can run.
+    var timeout = timeval(tv_sec: receiveTimeoutSeconds, tv_usec: 0)
+    guard
+      setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size)) == 0
+    else {
+      let error = errno
+      _ = close(fd)
+      throw ACPError("test socket timeout setup failed: errno \(error)")
+    }
     return fd
   }
 
