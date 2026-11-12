@@ -6,13 +6,13 @@
 
   @Suite("Apple Containers default kernel")
   struct AppleContainerDefaultKernelTests {
-    @Test("metadata matches Apple's Kata 3.32.0 default")
+    @Test("metadata matches Apple's Kata 4.3.1 default")
     func defaultMetadata() {
-      #expect(AppleContainerDefaultKernel.kataVersion == "3.32.0")
-      #expect(AppleContainerDefaultKernel.filename == "vmlinux-6.18.35-197-debug")
+      #expect(AppleContainerDefaultKernel.kataVersion == "4.3.1")
+      #expect(AppleContainerDefaultKernel.filename == "vmlinux-6.18.56-208-debug")
       #expect(
         AppleContainerDefaultKernel.archiveDigest
-          == "sha256:8736c054d9223974735394f822000823baef509e1c33405ec798240fa9b6e4b5")
+          == "sha256:2c5bf7cde334ad5307d482f45cceda496f91c9b6b96f5278c47f4f4eac1bbae6")
     }
 
     @Test(
@@ -22,6 +22,9 @@
         "vmlinux-6.18.15-186",
         "vmlinux-6.18.35",
         "vmlinux-6.18.35-196-debug",
+        "vmlinux-6.18.35-197-debug",
+        "vmlinux-6.18.56",
+        "vmlinux-6.18.56-207-debug",
       ])
     func olderKernels(filename: String) {
       #expect(!AppleContainerDefaultKernel.isCurrentOrNewer(filename: filename))
@@ -31,7 +34,7 @@
     func currentKernel() {
       #expect(
         AppleContainerDefaultKernel.isCurrentOrNewer(
-          filename: "vmlinux-6.18.35-197-debug"))
+          filename: "vmlinux-6.18.56-208-debug"))
     }
 
     @Test("newer installed kernels are not downgraded")

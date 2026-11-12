@@ -29,12 +29,12 @@ TOOLKIT_VERSION=3
 # what upstream published — not one taken from the download it is meant to
 # verify.
 TOOLKIT_CONTENTS=$(cat <<'CONTENTS'
-bin/curl|x64|https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-x86_64-musl-8.22.0.tar.xz|dfb02460ba2abe513087538f12a3cf79b74b64a5ea3787ce8ac0cdb11251f884|curl
-bin/curl|arm64|https://github.com/stunnel/static-curl/releases/download/8.22.0/curl-linux-aarch64-musl-8.22.0.tar.xz|cf94cbeaae1b3c1944a4a761ef04478f8f0b23e93a324b5ed009b2082eda11f3|curl
+bin/curl|x64|https://github.com/stunnel/static-curl/releases/download/8.23.0-1/curl-linux-x86_64-musl-8.23.0-1.tar.xz|2e0c54ba696afd0df1e899e4344fa63d53d73107f9ac08173314d9be85bc76fd|curl
+bin/curl|arm64|https://github.com/stunnel/static-curl/releases/download/8.23.0-1/curl-linux-aarch64-musl-8.23.0-1.tar.xz|e20f26e5b87c1883608f286f86bdabf39d3b8556e8a8e75dfe205e14bd206199|curl
 bin/jq|x64|https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64|b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f|-
 bin/jq|arm64|https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-arm64|8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309|-
 bin/rg|x64|https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz|33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c|ripgrep-15.2.0-x86_64-unknown-linux-musl/rg
 bin/rg|arm64|https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-unknown-linux-musl.tar.gz|800b1e7206afe799dfb5a6901f23147cfaabe0e52210538100f61e86e1740915|ripgrep-15.2.0-aarch64-unknown-linux-musl/rg
-share/ca-certificates.crt|any|https://curl.se/ca/cacert-2026-09-25.pem|a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505|-
+share/ca-certificates.crt|any|https://curl.se/ca/cacert-2026-11-05.pem|427c064216761a1e72a8b30f0d954d08cb6e4435a82091fb865afd20c8497285|-
 CONTENTS
 )

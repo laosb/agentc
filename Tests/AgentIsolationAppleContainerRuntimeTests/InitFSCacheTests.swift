@@ -33,7 +33,7 @@
       let old = InitFSCache(
         imageStorePath: store.url, reference: "ghcr.io/apple/containerization/vminit:0.41.0")
       let otherPlatform = InitFSCache(imageStorePath: store.url, platform: "linux/amd64")
-      #expect(current.reference == "ghcr.io/apple/containerization/vminit:0.50.0")
+      #expect(current.reference == "ghcr.io/apple/containerization/vminit:0.54.0")
       #expect(current.key == same.key)
       #expect(current.key != old.key)
       #expect(current.key != otherPlatform.key)

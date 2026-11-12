@@ -30,13 +30,13 @@ struct LinuxKernelVersion: Comparable, Sendable {
 
 /// Kernel metadata mirrored from Apple Container's `KernelConfig` defaults.
 enum AppleContainerDefaultKernel {
-  static let kataVersion = "3.32.0"
+  static let kataVersion = "4.3.1"
   static let binaryPath =
-    "opt/kata/share/kata-containers/vmlinux-6.18.35-197-debug"
+    "opt/kata/share/kata-containers/vmlinux-6.18.56-208-debug"
   static let archiveURL =
-    "https://github.com/kata-containers/kata-containers/releases/download/3.32.0/kata-static-3.32.0-arm64.tar.zst"
+    "https://github.com/kata-containers/kata-containers/releases/download/4.3.1/kata-static-4.3.1-arm64.tar.zst"
   static let archiveDigest =
-    "sha256:8736c054d9223974735394f822000823baef509e1c33405ec798240fa9b6e4b5"
+    "sha256:2c5bf7cde334ad5307d482f45cceda496f91c9b6b96f5278c47f4f4eac1bbae6"
   static let filename = String(binaryPath.split(separator: "/").last!)
   static let version = LinuxKernelVersion(filename: filename)!
 

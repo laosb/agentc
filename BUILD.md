@@ -4,7 +4,7 @@ This document covers local development and release-style builds. For installatio
 
 ## Requirements
 
-- **Swift 6.4+**. CI and `.swift-version` pin Swift 6.4.1.
+- **Swift 6.4+**. CI and `.swift-version` pin Swift 6.4.2.
 - **macOS 15+** to build the Apple Containerization backend.
 - **macOS or Linux** to build the Docker backend.
 - A Docker-compatible daemon is only required when running Docker-backed integration tests or using a Docker build locally.
@@ -270,10 +270,10 @@ agentc Toolkit                            curl, jq, ripgrep, CA bundle
 
 ### Dependency compatibility
 
-The package uses Containerization 0.50.0 with its matching vminit 0.50.0 image.
+The package uses Containerization 0.54.0 with its matching vminit 0.54.0 image.
 Swift Crypto is on 4.5.2 because Containerization requires a version below 5.0.0;
 upgrading to Crypto 5 requires an upstream Containerization compatibility update.
-The guest kernel remains Kata 3.32.0, matching Apple Container's current kernel
+The guest kernel uses Kata 4.3.1, matching Apple Container 1.7.1's kernel
 defaults rather than the newest standalone Kata release.
 
 ## Startup performance

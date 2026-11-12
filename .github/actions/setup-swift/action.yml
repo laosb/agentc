@@ -13,8 +13,8 @@ runs:
     - name: Setup Swift
       uses: SwiftyLab/setup-swift@latest
       with:
-        swift-version: "6.4.1"
-        # Refresh the release catalog; the action's default snapshot predates 6.4.1.
+        swift-version: "6.4.2"
+        # Refresh the release catalog; the action's default snapshot predates 6.4.2.
         check-latest: true
 
     - name: Cache Static Linux SDK
@@ -23,7 +23,7 @@ runs:
       uses: actions/cache@v6
       with:
         path: ~/.swiftpm/swift-sdks
-        key: static-sdk-6.4.1-${{ runner.arch }}
+        key: static-sdk-6.4.2-${{ runner.arch }}
 
     - name: Install Static Linux SDK
       if: inputs.static-sdk == 'true' && steps.cache-static-sdk.outputs.cache-hit != 'true'
@@ -32,11 +32,11 @@ runs:
         set -euo pipefail
         # Swift 6.3.3 can crash in FoundationNetworking cleanup after downloading
         # the SDK on Linux ARM64. Install from disk to avoid that network path.
-        sdk_archive="$RUNNER_TEMP/swift-6.4.1-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz"
+        sdk_archive="$RUNNER_TEMP/swift-6.4.2-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz"
         curl --fail --location --retry 3 --output "$sdk_archive" \
-          https://download.swift.org/swift-6.4.1-release/static-sdk/swift-6.4.1-RELEASE/swift-6.4.1-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz
+          https://download.swift.org/swift-6.4.2-release/static-sdk/swift-6.4.2-RELEASE/swift-6.4.2-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz
         # swift sdk install only validates --checksum for remote URLs.
         printf '%s  %s\n' \
-          cef5592d7430ed3c5ae1ddda479849c6f5252bd94a5723db1559f984caf38a7c \
+          3786b179936d9cc9e266dd506bd1654176358d7b25288e243359f4d17cc4dc5a \
           "$sdk_archive" | sha256sum --check
         swift sdk install "$sdk_archive"

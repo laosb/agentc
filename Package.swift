@@ -25,15 +25,15 @@ let package = Package(
     ),
   ],
   dependencies: [
-    .package(url: "https://github.com/apple/containerization.git", from: "0.50.0"),
+    .package(url: "https://github.com/apple/containerization.git", from: "0.54.0"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
-    // Containerization 0.50.0 requires swift-crypto < 5.0.0.
+    // Containerization 0.54.0 requires swift-crypto < 5.0.0.
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.2"),
-    .package(url: "https://github.com/apple/swift-log.git", from: "1.16.1"),
-    .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0"),
+    .package(url: "https://github.com/apple/swift-log.git", from: "1.17.0"),
+    .package(url: "https://github.com/apple/swift-nio.git", from: "2.105.0"),
     .package(url: "https://github.com/apple/swift-system.git", from: "1.8.1"),
-    .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.36.2"),
-    .package(url: "https://github.com/swiftlang/swift-subprocess.git", from: "1.0.1"),
+    .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.37.0"),
+    .package(url: "https://github.com/swiftlang/swift-subprocess.git", from: "1.0.2"),
   ],
   targets: [
     .target(

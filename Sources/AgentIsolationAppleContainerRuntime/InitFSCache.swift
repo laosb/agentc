@@ -7,7 +7,7 @@ import Foundation
 /// mutable tags such as `latest`. Upgrading vminit selects a new entry without
 /// replacing a disk that a running VM may still have open.
 struct InitFSCache: Sendable {
-  static let imageReference = "ghcr.io/apple/containerization/vminit:0.50.0"
+  static let imageReference = "ghcr.io/apple/containerization/vminit:0.54.0"
 
   let root: URL
   let reference: String
