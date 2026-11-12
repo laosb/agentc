@@ -13,7 +13,7 @@
 # `ToolkitManager.version` through a version-bump PR before publishing
 # `toolkit-v$TOOLKIT_VERSION`. ToolkitManifestTests keeps them synchronized.
 
-TOOLKIT_VERSION=4
+TOOLKIT_VERSION=5
 
 # dest | arch | url | sha256 | member
 #
