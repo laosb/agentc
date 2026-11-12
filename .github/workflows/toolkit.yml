@@ -81,7 +81,13 @@ jobs:
             branch="automation/toolkit-v${version}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             git switch -c "$branch"
             git add scripts/toolkit/manifest.sh Sources/agentc/ToolkitManager.swift
-            git commit -m "chore(toolkit): bump Toolkit to v$version"
+            # Only this generated two-file version bump skips CI. The publish job
+            # validates the versions and bundles; actual Toolkit changes still run CI.
+            # GITHUB_TOKEN-created PR runs otherwise need approval, which expires
+            # when this short-lived PR is immediately merged. main has no required
+            # status checks (skipped workflows would leave those checks pending).
+            bump_title="chore(toolkit): bump Toolkit to v$version [skip ci]"
+            git commit -m "$bump_title"
             git push --set-upstream origin "$branch"
 
             # main requires pull requests. Merge this mechanical bump through a
@@ -89,9 +95,9 @@ jobs:
             pr_url=$(gh pr create \
               --base main \
               --head "$branch" \
-              --title "chore(toolkit): bump Toolkit to v$version" \
+              --title "$bump_title" \
               --body "Automated version bump for Toolkit workflow run $GITHUB_RUN_ID.")
-            gh pr merge "$pr_url" --squash --delete-branch
+            gh pr merge "$pr_url" --squash --delete-branch --subject "$bump_title"
             commit=$(gh pr view "$pr_url" --json mergeCommit,state \
               --jq 'select(.state == "MERGED") | .mergeCommit.oid')
             test -n "$commit"

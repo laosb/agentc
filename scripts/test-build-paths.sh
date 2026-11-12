@@ -13,14 +13,23 @@ cp "$ROOT/Sources/agentc/BuildInfo.swift" "$TEMP/project/Sources/agentc/BuildInf
 cat > "$TEMP/bin/swift" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" != build ]]; then
+    echo "Expected swift build, got: swift $*" >&2
+    exit 1
+fi
+shift
+# Check both build and query calls. Exit explicitly: Bash 3.2 does not apply
+# errexit to a failed [[ ... ]] the same way as newer Bash versions do.
+if [[ "${1:-}" != "--product" || "${2:-}" != agentc ]]; then
+    echo "Expected --product agentc, got: $*" >&2
+    exit 1
+fi
 if [[ "${!#}" == "--show-bin-path" ]]; then
     # The path query must use exactly the build's options.
     printf '%s\n' "${@:1:$#-1}" > "$MOCK_DIR/query-args"
     cmp "$MOCK_DIR/build-args" "$MOCK_DIR/query-args"
     printf '%s\n' "$MOCK_DIR/actual output"
 else
-    # Building the CLI must not compile unrelated products (notably bootstrap).
-    [[ "$1" == "--product" && "$2" == "agentc" ]]
     printf '%s\n' "$@" > "$MOCK_DIR/build-args"
     mkdir -p "$MOCK_DIR/actual output"
     printf 'binary for %s\n' "$*" > "$MOCK_DIR/actual output/agentc"
@@ -30,6 +39,20 @@ chmod +x "$TEMP/bin/swift"
 export PATH="$TEMP/bin:$PATH"
 export MOCK_DIR="$TEMP"
 export BUILD_VERSION=dev BUILD_GIT_SHA=unknown
+
+# Prove that the mock rejects invalid invocations even on macOS's Bash 3.2.
+expect_mock_rejection() {
+    if swift "$@" > "$TEMP/rejected.log" 2>&1; then
+        echo "FAIL: mock accepted swift $*" >&2
+        exit 1
+    fi
+}
+expect_mock_rejection
+expect_mock_rejection --product agentc
+expect_mock_rejection test --product agentc
+expect_mock_rejection build
+expect_mock_rejection build --product agentc-bootstrap
+expect_mock_rejection build --product agentc-bootstrap --show-bin-path
 
 cd "$TEMP/project"
 for sdk in native x86_64-swift-linux-musl aarch64-swift-linux-musl; do
