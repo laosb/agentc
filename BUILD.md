@@ -139,8 +139,11 @@ uses `~/.agentc/bin/bootstrap`, which CI builds before testing. The test driver
 image needs Swift, not the relay itself. `scripts/test-mcp-relay-minimal.py`
 additionally runs the bootstrap in a Docker `scratch` image (with only the kernel
 filesystems supplied by Docker), checking 2 MiB of opaque traffic and EOF flushing
-without image utilities or shared libraries. All smoke scripts run in CI's regular and
-static Linux integration jobs on x64 and arm64.
+without image utilities or shared libraries. CI runs the ACP and host-MCP smoke
+scripts against both native and static Linux release binaries on x64 and arm64.
+Each architecture builds the native test bundle and static bootstrap once and
+reuses the images and fixtures for both binaries. The bootstrap-only scratch-image
+test runs once per architecture.
 
 For the minimal-image test on macOS, set `AGENTC_TEST_MINIMAL_RUNTIME=container`
 to use Apple's `container` CLI instead of Docker. The script constructs and loads
@@ -176,6 +179,51 @@ above, this creates managed directories and temporary write probes. The test
 asserts that mount-root `chown` fails and initialization succeeds twice as a
 non-root UID. The regular Linux tests also check that genuinely inaccessible
 homes and managed directories fail, and that private permissions are preserved.
+
+## CI selection and reuse
+
+The Test workflow runs on PRs targeting `main` and pushes to `main`. A lightweight
+selection job examines the complete Git diff (the PR merge base or the entire
+push range), including deleted and renamed paths:
+
+- Package/toolchain, shared CI action, or CI helper changes select every test job.
+- Source and Swift-test changes select macOS and Linux unit tests on x64 and arm64.
+- Source, Dockerfile, build-script, integration-test, and smoke-fixture changes
+  select native and static Linux integration tests.
+- Shared isolation and Docker-runtime changes select gVisor E2E on both Linux
+  architectures and the existing best-effort Kata E2E on x64. Kata probes KVM
+  before installing Swift.
+- Packet-engine inputs select the macOS AddressSanitizer harnesses.
+- Documentation, installer, toolkit-only, and release-workflow-only changes do not
+  start Swift jobs. The cheap selection/build-script checks still run.
+
+Manual dispatch runs everything. Missing diff history also runs everything rather
+than silently skipping coverage. Superseded Test runs on the same PR/ref are
+cancelled; publication workflows are serialized instead. `Test result` is the
+stable aggregate check suitable for branch protection, including docs-only PRs.
+When adding CI inputs or commands, update `scripts/ci/changes.py` and its tests.
+PR and main runs are intentionally separate: the latter validates the actual
+landed tree and populates caches accessible to subsequent PRs.
+
+Linux unit and integration tests share one native test bundle per architecture;
+integration tests use `--skip-build` while launching the selected `./agentc`
+release binary. Local Docker images replace image artifact export/upload/download,
+and tests create their own stub configurations/profiles instead of cloning or
+caching unused fixtures. Build caches are scoped by platform, architecture,
+purpose, toolchain and package inputs, with a revision suffix so restored builds
+can be refreshed.
+
+Tagged releases still build all six CLI variants. Each static Linux job also
+packages its bootstrap, avoiding separate bootstrap jobs. Release builds remain
+separate from tests because they embed tag-specific metadata. Toolkit publication
+remains independently path-filtered and versioned.
+
+Validate the selection rules and build wrapper without installing Swift:
+
+```sh
+python3 -m unittest discover -s scripts/ci -p 'test_*.py'
+bash scripts/test-build-paths.sh
+```
 
 ## Release-style `agentc` builds
 

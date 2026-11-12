@@ -5,8 +5,16 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -39,8 +47,6 @@ jobs:
             swift-sdk: aarch64-swift-linux-musl
 
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout
@@ -71,56 +77,37 @@ jobs:
         with:
           name: agentc-${{ matrix.variant }}
           path: agentc-${{ matrix.variant }}.tar.gz
+          compression-level: 0
 
-  build-bootstrap:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: x64
-            swift-sdk: x86_64-swift-linux-musl
-            variant: x64-linux-static
-          - os: ubuntu-24.04-arm
-            arch: arm64
-            swift-sdk: aarch64-swift-linux-musl
-            variant: arm64-linux-static
-
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Swift
-        uses: ./.github/actions/setup-swift
-        with:
-          static-sdk: "true"
-
+      # Reuse the static job's toolchain, SDK, and dependency build products.
       - name: Build bootstrap binary
+        if: matrix.swift-sdk
         run: |
-          swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}"
-          build_dir="$(swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}" --show-bin-path)"
+          args=(--product agentc-bootstrap -c release --disable-default-traits --traits ContainerRuntimeDocker --swift-sdk "${{ matrix.swift-sdk }}")
+          swift build "${args[@]}"
+          build_dir="$(swift build "${args[@]}" --show-bin-path)"
           cp "$build_dir/agentc-bootstrap" agentc-bootstrap
 
-      - name: Verify static linking
+      - name: Verify bootstrap static linking
+        if: matrix.swift-sdk
         run: |
           file ./agentc-bootstrap | tee /dev/stderr | grep -q "statically linked"
 
       - name: Package bootstrap binary
+        if: matrix.swift-sdk
         run: |
           tar czf "agentc-bootstrap-${{ matrix.variant }}.tar.gz" agentc-bootstrap
 
       - name: Upload bootstrap artifact
+        if: matrix.swift-sdk
         uses: actions/upload-artifact@v7
         with:
           name: agentc-bootstrap-${{ matrix.variant }}
           path: agentc-bootstrap-${{ matrix.variant }}.tar.gz
+          compression-level: 0
 
   release:
-    needs: [build, build-bootstrap]
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write

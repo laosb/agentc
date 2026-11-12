@@ -1,28 +1,55 @@
 name: Test
 
-# Documentation and the standalone installer never affect the build or the test
-# suite, so changes limited to them skip CI entirely.
+# Keep the workflow/check present even for docs-only PRs. The cheap changes job
+# selects expensive jobs from the complete diff.
 on:
   push:
     branches:
       - main
-    paths-ignore:
-      - "**/*.md"
-      - docs/**
-      - install.sh
-      - LICENSE
   pull_request:
     branches:
       - main
-    paths-ignore:
-      - "**/*.md"
-      - docs/**
-      - install.sh
-      - LICENSE
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      unit: ${{ steps.changes.outputs.unit }}
+      integration: ${{ steps.changes.outputs.integration }}
+      runtime: ${{ steps.changes.outputs.runtime }}
+      packet: ${{ steps.changes.outputs.packet }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Test CI selection and build output discovery
+        run: |
+          python3 -m unittest discover -s scripts/ci -p 'test_*.py'
+          bash scripts/test-build-paths.sh
+
+      - name: Select affected jobs
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 scripts/ci/changes.py --event "$EVENT" --base "$BASE" --head "$HEAD"
+
   unit-tests:
+    needs: changes
+    if: needs.changes.outputs.unit == 'true' || needs.changes.outputs.packet == 'true'
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -33,43 +60,29 @@ jobs:
           - os: macos-26-intel
             arch: x64
             traits: ContainerRuntimeAppleContainer,ContainerRuntimeDocker
-          - os: ubuntu-24.04
-            arch: x64
-            traits: ContainerRuntimeDocker
-          - os: ubuntu-24.04-arm
-            arch: arm64
-            traits: ContainerRuntimeDocker
 
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Test build output discovery
-        run: bash scripts/test-build-paths.sh
-
       - name: Setup Swift
         uses: ./.github/actions/setup-swift
-
-      - name: Cache SPM build artifacts
-        uses: actions/cache@v6
         with:
-          path: .build
-          key: spm-unit-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
-          restore-keys: |
-            spm-unit-${{ matrix.os }}-${{ matrix.arch }}-
+          cache-scope: unit
 
       - name: Run unit tests
-        run: swift test --disable-default-traits --traits "${{ matrix.traits }}" --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests|AgentIsolationAppleContainerRuntimeTests|AgentcBootstrapTests|AgentcTests|SOCKSNetworkTests'
+        if: needs.changes.outputs.unit == 'true'
+        run: swift test --disable-default-traits --traits "${{ matrix.traits }}" --skip AgentcIntegrationTests
 
       - name: Check CLI tests with a single cooperative worker
-        if: runner.os == 'macOS'
+        if: needs.changes.outputs.unit == 'true'
         env:
           LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1"
         run: swift test --skip-build --disable-default-traits --traits "${{ matrix.traits }}" --filter AgentcTests
 
       - name: Check packet engine and readiness under AddressSanitizer
-        if: runner.os == 'macOS'
+        if: needs.changes.outputs.packet == 'true'
         run: |
           SANITIZE=address sh scripts/test-packet-engine.sh --control-eof
           SANITIZE=address sh scripts/test-packet-engine.sh --readiness --control-eof
@@ -82,6 +95,9 @@ jobs:
   # it runs as a required job on both architectures. Kata needs `/dev/kvm`.
   runtime-e2e:
     name: Runtime E2E (${{ matrix.runtime }}, ${{ matrix.arch }})
+    needs: changes
+    if: needs.changes.outputs.runtime == 'true'
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -105,18 +121,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Swift
-        uses: ./.github/actions/setup-swift
-
-      - name: Cache SPM build artifacts
-        uses: actions/cache@v6
-        with:
-          path: .build
-          key: spm-runtime-e2e-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
-          restore-keys: |
-            spm-runtime-e2e-${{ matrix.os }}-${{ matrix.arch }}-
-            spm-unit-${{ matrix.os }}-${{ matrix.arch }}-
-
       # Kata boots a VM per container, so without KVM it either fails outright or silently
       # falls back to QEMU's TCG interpreter, which is far too slow to test against.
       - name: Probe KVM
@@ -135,6 +139,12 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "::warning::/dev/kvm is unavailable on this runner — skipping the Kata E2E"
           fi
+
+      - name: Setup Swift
+        if: matrix.runtime != 'kata' || steps.kvm.outputs.available == 'true'
+        uses: ./.github/actions/setup-swift
+        with:
+          cache-scope: runtime-${{ matrix.runtime }}
 
       - name: Install gVisor
         if: matrix.runtime == 'runsc'
@@ -191,40 +201,16 @@ jobs:
 
       - name: Run runtime E2E tests
         if: matrix.runtime != 'kata' || steps.kvm.outputs.available == 'true'
-        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentIsolationDockerRuntimeTests
+        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter DockerHardenedRuntimeE2ETests
         env:
           AGENTC_TEST_DOCKER_RUNTIME: ${{ matrix.runtime }}
 
-  build-test-image:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: x64
-          - os: ubuntu-24.04-arm
-            arch: arm64
-
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Build base image
-        run: docker build -t ghcr.io/laosb/claudec:latest .
-
-      - name: Export image
-        run: docker save ghcr.io/laosb/claudec:latest | gzip > claudec-image.tar.gz
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: claudec-image-${{ matrix.arch }}
-          path: claudec-image.tar.gz
-          retention-days: 1
-
-  integration-tests:
-    needs: build-test-image
+  # One native test bundle, SDK, bootstrap, image, and fixture setup per arch.
+  # Both glibc and musl release binaries still get the full integration suite.
+  linux-tests:
+    needs: changes
+    if: needs.changes.outputs.unit == 'true' || needs.changes.outputs.integration == 'true'
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -244,157 +230,81 @@ jobs:
       - name: Setup Swift
         uses: ./.github/actions/setup-swift
         with:
-          static-sdk: "true"
+          static-sdk: ${{ needs.changes.outputs.integration }}
+          cache-scope: linux
 
-      - name: Cache SPM build artifacts
-        uses: actions/cache@v6
-        with:
-          path: .build
-          key: spm-integration-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
-          restore-keys: |
-            spm-integration-${{ matrix.os }}-${{ matrix.arch }}-
+      - name: Build native test bundle once
+        run: swift build --build-tests --disable-default-traits --traits ContainerRuntimeDocker
 
-      - name: Download base image
-        uses: actions/download-artifact@v8
-        with:
-          name: claudec-image-${{ matrix.arch }}
+      - name: Run unit tests
+        if: needs.changes.outputs.unit == 'true'
+        run: swift test --skip-build --disable-default-traits --traits ContainerRuntimeDocker --skip AgentcIntegrationTests
 
-      - name: Load base image
-        run: gunzip -c claudec-image.tar.gz | docker load
-
-      - name: Build binary
-        run: bash build.sh --runtimes docker
+      - name: Build base image locally
+        if: needs.changes.outputs.integration == 'true'
+        run: docker build -t ghcr.io/laosb/claudec:latest .
 
       - name: Build bootstrap binary
+        if: needs.changes.outputs.integration == 'true'
         run: |
-          swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}"
-          build_dir="$(swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}" --show-bin-path)"
+          args=(--product agentc-bootstrap -c release --disable-default-traits --traits ContainerRuntimeDocker --swift-sdk "${{ matrix.swift-sdk }}")
+          swift build "${args[@]}"
+          build_dir="$(swift build "${args[@]}" --show-bin-path)"
           mkdir -p ~/.agentc/bin
           cp "$build_dir/agentc-bootstrap" ~/.agentc/bin/bootstrap
           chmod +x ~/.agentc/bin/bootstrap
+          file ~/.agentc/bin/bootstrap | tee /dev/stderr | grep -q "statically linked"
+
+      # This exercises only the bootstrap, which is identical for both CLI builds.
+      - name: Test bootstrap in a scratch image
+        if: needs.changes.outputs.integration == 'true'
+        timeout-minutes: 5
+        run: python3 scripts/test-mcp-relay-minimal.py
 
       - name: Pre-pull base images for tests
+        if: needs.changes.outputs.integration == 'true'
         run: |
           docker pull docker.io/library/debian:latest
           docker pull docker.io/library/alpine:latest
           docker pull docker.io/library/buildpack-deps:scm
           docker pull docker.io/library/swift:6.4.2
 
-      - name: Pre-clone configurations repo
-        run: |
-          mkdir -p ~/.agentc
-          git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.agentc/configurations
-          touch ~/.agentc/configurations/.agentc-last-pull
+      - name: Build native release binary
+        if: needs.changes.outputs.integration == 'true'
+        run: bash build.sh --runtimes docker
 
-      - name: Cache shared test profiles
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.agentc/profiles/__TEST_agentc_shared
-          key: test-profiles-${{ matrix.arch }}-${{ hashFiles('Sources/agentc-bootstrap/**', 'Dockerfile') }}
-
-      - name: Run ACP container smoke tests
+      - name: Test native release binary
+        if: needs.changes.outputs.integration == 'true'
         timeout-minutes: 10
-        env:
-          AGENTC_TEST_RUNTIME: docker
-          AGENTC_TEST_IMAGE: docker.io/library/swift:6.4.2
-        run: |
-          python3 scripts/test-acp.py
-          AGENTC_TEST_ACP_SIGNAL=1 python3 scripts/test-acp.py
-          python3 scripts/test-host-mcp.py
-          python3 scripts/test-mcp-relay-minimal.py
-
-      - name: Run integration tests
-        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests
-        env:
-          VERBOSE: 1
-
-  integration-tests-static:
-    needs: build-test-image
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: x64
-            swift-sdk: x86_64-swift-linux-musl
-          - os: ubuntu-24.04-arm
-            arch: arm64
-            swift-sdk: aarch64-swift-linux-musl
-
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Swift
-        uses: ./.github/actions/setup-swift
-        with:
-          static-sdk: "true"
-
-      - name: Cache SPM build artifacts
-        uses: actions/cache@v6
-        with:
-          path: .build
-          key: spm-static-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
-          restore-keys: |
-            spm-static-${{ matrix.os }}-${{ matrix.arch }}-
-
-      - name: Download base image
-        uses: actions/download-artifact@v8
-        with:
-          name: claudec-image-${{ matrix.arch }}
-
-      - name: Load base image
-        run: gunzip -c claudec-image.tar.gz | docker load
+        run: bash scripts/ci/test-integration.sh
 
       - name: Build static binary
+        if: needs.changes.outputs.integration == 'true'
         run: bash build.sh --runtimes docker --swift-sdk ${{ matrix.swift-sdk }}
 
       - name: Verify static linking
+        if: needs.changes.outputs.integration == 'true'
         run: |
           file ./agentc | tee /dev/stderr | grep -q "statically linked"
 
-      - name: Build bootstrap binary
-        run: |
-          swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}"
-          build_dir="$(swift build --product agentc-bootstrap -c release --swift-sdk "${{ matrix.swift-sdk }}" --show-bin-path)"
-          mkdir -p ~/.agentc/bin
-          cp "$build_dir/agentc-bootstrap" ~/.agentc/bin/bootstrap
-          chmod +x ~/.agentc/bin/bootstrap
-
-      - name: Pre-pull base images for tests
-        run: |
-          docker pull docker.io/library/debian:latest
-          docker pull docker.io/library/alpine:latest
-          docker pull docker.io/library/buildpack-deps:scm
-          docker pull docker.io/library/swift:6.4.2
-
-      - name: Pre-clone configurations repo
-        run: |
-          mkdir -p ~/.agentc
-          git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.agentc/configurations
-          touch ~/.agentc/configurations/.agentc-last-pull
-
-      - name: Cache shared test profiles
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.agentc/profiles/__TEST_agentc_shared
-          key: test-profiles-static-${{ matrix.arch }}-${{ hashFiles('Sources/agentc-bootstrap/**', 'Dockerfile') }}
-
-      - name: Run ACP container smoke tests
+      - name: Test static release binary
+        if: needs.changes.outputs.integration == 'true'
         timeout-minutes: 10
-        env:
-          AGENTC_TEST_RUNTIME: docker
-          AGENTC_TEST_IMAGE: docker.io/library/swift:6.4.2
-        run: |
-          python3 scripts/test-acp.py
-          AGENTC_TEST_ACP_SIGNAL=1 python3 scripts/test-acp.py
-          python3 scripts/test-host-mcp.py
-          python3 scripts/test-mcp-relay-minimal.py
+        run: bash scripts/ci/test-integration.sh
 
-      - name: Run integration tests
-        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter AgentcIntegrationTests
+  # A stable required check: skipped jobs are OK, failed/cancelled jobs are not.
+  test-result:
+    name: Test result
+    needs: [changes, unit-tests, linux-tests, runtime-e2e]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check selected jobs succeeded
         env:
-          VERBOSE: 1
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -e '
+            .changes.result == "success" and
+            all(.[]; .result == "success" or .result == "skipped")
+          '

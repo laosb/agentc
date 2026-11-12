@@ -6,6 +6,10 @@ inputs:
     description: Set to "true" to install the Static Linux SDK.
     required: false
     default: "false"
+  cache-scope:
+    description: Optional build-cache namespace (separates build flags and concurrent writers).
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -16,6 +20,17 @@ runs:
         swift-version: "6.4.2"
         # Refresh the release catalog; the action's default snapshot predates 6.4.2.
         check-latest: true
+
+    # Cache entries are immutable. Include the revision so a restored build can
+    # be updated, while restoring only builds with compatible tools/dependencies.
+    - name: Cache SPM build artifacts
+      if: inputs.cache-scope != ''
+      uses: actions/cache@v6
+      with:
+        path: .build
+        key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-scope }}-${{ hashFiles('.swift-version', '.github/actions/setup-swift/action.yml', 'Package.swift', 'Package.resolved') }}-${{ github.sha }}
+        restore-keys: |
+          spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-scope }}-${{ hashFiles('.swift-version', '.github/actions/setup-swift/action.yml', 'Package.swift', 'Package.resolved') }}-
 
     - name: Cache Static Linux SDK
       if: inputs.static-sdk == 'true'

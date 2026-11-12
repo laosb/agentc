@@ -132,7 +132,7 @@ enum BuildInfo {
 SWIFT
 fi
 
-BUILD_ARGS=(-c "${CONFIG}" --disable-default-traits --traits "${TRAITS}")
+BUILD_ARGS=(--product agentc -c "${CONFIG}" --disable-default-traits --traits "${TRAITS}")
 if [[ -n "${SWIFT_SDK}" ]]; then
     BUILD_ARGS+=(--swift-sdk "${SWIFT_SDK}")
 else

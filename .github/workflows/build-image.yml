@@ -5,7 +5,13 @@ on:
     branches: [main]
     paths:
       - Dockerfile
+      - .github/workflows/build-image.yml
   workflow_dispatch:
+
+# Serialize version allocation and publication; don't interrupt a registry push.
+concurrency:
+  group: image-release
+  cancel-in-progress: false
 
 jobs:
   build-and-push:

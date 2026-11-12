@@ -19,6 +19,8 @@ if [[ "${!#}" == "--show-bin-path" ]]; then
     cmp "$MOCK_DIR/build-args" "$MOCK_DIR/query-args"
     printf '%s\n' "$MOCK_DIR/actual output"
 else
+    # Building the CLI must not compile unrelated products (notably bootstrap).
+    [[ "$1" == "--product" && "$2" == "agentc" ]]
     printf '%s\n' "$@" > "$MOCK_DIR/build-args"
     mkdir -p "$MOCK_DIR/actual output"
     printf 'binary for %s\n' "$*" > "$MOCK_DIR/actual output/agentc"
