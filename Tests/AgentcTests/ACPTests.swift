@@ -15,21 +15,17 @@ struct ACPTests {
   }
 
   @Test func framing() throws {
-    var framer = ACPFramer()
-    let input = Data("{\"🌍\":true}\r\n\n{}\n".utf8)
-    var lines: [Data] = []
-    for byte in input { lines += framer.append(Data([byte])) }
-    #expect(lines == [Data("{\"🌍\":true}\r".utf8), Data("{}".utf8)])
-    try framer.finish()
-    _ = framer.append(Data("partial".utf8))
-    #expect(throws: ACPError.self) { try framer.finish() }
-  }
-
-  @Test func oversizedFrameRecovery() {
-    var framer = ACPFramer()
-    #expect(framer.append(Data(repeating: 65, count: ACPFramer.limit + 1)).isEmpty)
-    #expect(framer.errors.count == 1)
-    #expect(framer.append(Data("discard\n{}\n".utf8)) == [Data("{}".utf8)])
+    let harness = try Harness()
+    try harness.initialize()
+    // One byte at a time; CRLF and blank lines are tolerated.
+    let input = Data("{\"jsonrpc\":\"2.0\",\"method\":\"_🌍\"}\r\n\n \r\n".utf8)
+    for byte in input { try harness.proxy.receiveClient(Data([byte])) }
+    #expect(harness.sent["discovery"]?.last?["method"] == "_🌍")
+    #expect(harness.diagnostics.isEmpty)
+    try harness.proxy.finish()
+    let truncated = try Harness()
+    try truncated.proxy.receiveClient(Data("partial".utf8))
+    #expect(throws: ACPError.self) { try truncated.proxy.finish() }
   }
 
   @Test func commandOptions() throws {
@@ -150,7 +146,18 @@ struct ACPTests {
       "session/add_directory", id: 4, params: ["sessionId": .string(ids[0]), "path": "/"])
     #expect(harness.output.last?["error"] != nil)
     try harness.proxy.receiveClient(Data("not-json\n".utf8))
+    // Malformed client input is answered, never silently dropped.
+    #expect(harness.output.last?["id"] == .null)
+    #expect(harness.output.last?["error"]?.object?["code"] == -32700)
+    // Intentional change: a malformed backend line used to be logged and
+    // ignored. It may have been a response a client is waiting for, and it has
+    // no trustworthy id, so the backend is failed and what it owes is rejected.
+    try harness.client(
+      "session/prompt", id: 40, params: ["sessionId": .string(ids[0]), "prompt": []])
     try harness.proxy.receiveBackend(first.path, data: Data("not-json\n".utf8))
+    #expect(harness.output.last?["id"] == 40)
+    #expect(harness.output.last?["error"]?.object?["code"] == -32603)
+    #expect(harness.closed == [first.path])
     try harness.client(
       "session/prompt", id: 5, params: ["sessionId": .string(ids[1]), "prompt": []])
     #expect(harness.sent[second.path]?.last?["method"] == "session/prompt")
@@ -158,7 +165,7 @@ struct ACPTests {
     try harness.reply(second.path, result: ["stopReason": "end_turn"])
     #expect(harness.output.last?["id"] == 5)
     #expect(harness.diagnostics.contains { $0.contains("malformed client") })
-    #expect(harness.diagnostics.contains { $0.contains("malformed ACP message") })
+    #expect(harness.diagnostics.contains { $0.contains("malformed ACP message from backend") })
     try harness.proxy.finish()
   }
 
@@ -206,7 +213,7 @@ struct ACPTests {
   }
 }
 
-private final class Harness {
+final class Harness {
   static let capabilities: ACPProxy.Object = [
     "protocolVersion": 1,
     "agentCapabilities": [
@@ -217,21 +224,37 @@ private final class Harness {
   ]
   var launched: [String: ACPWorkspace?] = [:]
   var sent: [String: [ACPProxy.Object]] = [:]
+  var raw: [String: [Data]] = [:]
   var output: [ACPProxy.Object] = []
+  var rawOutput: [Data] = []
+  /// Outbound messages kept alive, as a stalled backend would keep them.
+  var hold = false
+  var held: [ACPOutbound] = []
+  var spooled = 0
   var closed: [String] = []
   var diagnostics: [String] = []
   var proxy: ACPProxy!
 
-  init() throws {
+  init(limits: ACPLimits = .standard, spool: ACPSpool? = nil) throws {
     proxy = ACPProxy(
-      options: try SharedOptions.parse([]),
+      options: try SharedOptions.parse([]), limits: limits, spool: spool,
       launch: { [unowned self] id, workspace in
         launched[id] = .some(workspace)
         return .init(
           send: { [unowned self] in
-            sent[id, default: []].append(try! ACPProxy.parse($0))
+            if case .spooled = $0.body { spooled += 1 }
+            if hold { held.append($0) }
+            let data = try! $0.materialize()
+            raw[id, default: []].append(data)
+            // Large payloads are compared as bytes; a tree of one is only slow.
+            sent[id, default: []].append(
+              data.count > 1 << 20 ? ["large": true] : try! ACPProxy.parse(data))
           }, close: { [unowned self] in closed.append(id) })
-      }, output: { [unowned self] in output.append(try ACPProxy.parse($0)) },
+      }, output: { [unowned self] in
+        let data = try $0.materialize()
+        rawOutput.append(data)
+        output.append(try ACPProxy.parse(data))
+      },
       diagnostic: { [unowned self] in diagnostics.append($0) })
   }
 

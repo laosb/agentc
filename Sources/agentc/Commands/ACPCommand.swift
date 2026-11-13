@@ -50,6 +50,12 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
       .appendingPathComponent("agentc-acp-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: scratch) }
+    // Private, and separate from `scratch`, which is mounted into a container.
+    let limits = ACPLimits.standard
+    let spool = try ACPSpool(limits: limits)
+    defer { spool.remove() }
+    // Every element is either a control event or holds a permit from its
+    // stream's window, so the stream's contents are bounded although its type is not.
     let (events, continuation) = AsyncStream<ACPEvent>.makeStream()
     // Let EOF/signals take the same cleanup path, and turn broken stdout into a
     // write error rather than a SIGPIPE that strands the containers.
@@ -73,8 +79,11 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
     var hostBridge: HostStdioMCPBridge?
     var tasks: [Task<Void, Never>] = []
     var generations: [String: UUID] = [:]
+    let writer = ACPClientWriter(
+      descriptor: STDOUT_FILENO, chunkBytes: limits.chunkBytes, observe: log?.observer.stdout,
+      failed: { continuation.yield(.failed($0)) })
     let proxy = ACPProxy(
-      options: options,
+      options: options, limits: limits, spool: spool,
       launch: { id, workspace in
         let generation = UUID()
         generations[id] = generation
@@ -91,7 +100,14 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
           options.additionalMount = workspace!.additionalMounts.map(\.path)
           settings?.agent?.additionalMounts = nil
         }
-        let (input, stdin) = AsyncStream<Data>.makeStream()
+        let stdin = ACPOutboundQueue()
+        let gate = ACPGate(limits: limits)
+        let stdout = ACPBackendOutput(
+          ingress: ACPIngress(limits: limits, spool: spool, gate: gate)
+        ) { continuation.yield(.backend(id, generation, $0)) }
+        let input = stdin.stream(chunkBytes: limits.chunkBytes) {
+          continuation.yield(.ended(id, generation, "ACP backend input failed: \($0)"))
+        }
         let snapshot = ACPLaunchSnapshot(options: options, arguments: arguments, settings: settings)
         let bridgeEnabled =
           workspace != nil
@@ -123,7 +139,7 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
                 projectSettings: snapshot.settings,
                 io: .custom(
                   stdin: ACPInput(input: input),
-                  stdout: ACPOutput { continuation.yield(.backend(id, generation, $0)) },
+                  stdout: stdout,
                   stderr: ACPOutput { FileHandle.standardError.write($0) }),
                 mcpRelayBootstrap: relay,
                 hostMCPPort: hostMCPPort))
@@ -141,8 +157,11 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
         }
         tasks.append(timeout)
         return ACPProxy.Transport(
-          send: { stdin.yield($0) },
+          send: { stdin.push($0) },
           close: {
+            // First wake a runtime output callback blocked on the window: it
+            // may hold a runtime lock that stopping the session needs.
+            gate.close()
             hostBridge?.stop(backend: id)
             stdin.finish()
             task.cancel()
@@ -157,42 +176,44 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
             return try hostBridge!.rewrite(message, backend: id, cwd: workspace.cwd)
           })
       },
-      output: { data in
-        log?.observer.stdout(data)
-        try FileHandle.standardOutput.write(contentsOf: data)
-      })
-    FileHandle.standardInput.readabilityHandler = { handle in
-      let data = handle.availableData
-      if data.isEmpty {
-        handle.readabilityHandler = nil
-        continuation.yield(.eof)
-      } else {
-        continuation.yield(.client(data))
-      }
+      output: { writer.push($0) })
+    let clientGate = ACPGate(limits: limits)
+    let reader = ACPClientReader(
+      descriptor: STDIN_FILENO,
+      ingress: ACPIngress(limits: limits, spool: spool, gate: clientGate),
+      chunkBytes: limits.chunkBytes, observe: log?.observer.stdin
+    ) { inbound, problem in
+      if let problem { logger.warning("\(problem)") }
+      continuation.yield(inbound.map { .client($0) } ?? .eof)
     }
     var failure: (any Error)?
     do {
       eventLoop: for await event in events {
         switch event {
-        case .client(let data):
-          log?.observer.stdin(data)
-          try proxy.receiveClient(data)
-        case .backend(let id, let generation, let data):
+        case .client(let inbound):
+          try proxy.receiveClient(inbound)
+        case .backend(let id, let generation, let inbound):
           guard generations[id] == generation else { continue }
-          try proxy.receiveBackend(id, data: data)
+          try proxy.receiveBackend(id, inbound)
         case .ended(let id, let generation, let reason):
           guard generations[id] == generation else { continue }
           try proxy.backendEnded(id, reason: reason)
         case .timeout(let id, let generation):
           guard generations[id] == generation else { continue }
           try proxy.initializationTimedOut(id)
+        case .failed(let reason): throw ACPError(reason)
         case .eof: break eventLoop
         }
       }
     } catch { failure = error }
-    FileHandle.standardInput.readabilityHandler = nil
+    // Wake every blocked producer before anything waits for a session to stop.
+    reader.stop()
+    clientGate.close()
     do { try proxy.finish() } catch { logger.warning("\(error)") }
     continuation.finish()
+    // Flush replies already produced, without waiting on a client that has
+    // stopped reading.
+    await writer.finish(grace: .seconds(2))
     for task in tasks { task.cancel() }
     await hostBridge?.shutdown()
     for task in tasks { await task.value }
@@ -201,10 +222,11 @@ struct ACPCommand: AsyncParsableCommand, LoggedCommand {
 }
 
 private enum ACPEvent: Sendable {
-  case client(Data)
-  case backend(String, UUID, Data)
+  case client(ACPInbound)
+  case backend(String, UUID, ACPInbound)
   case ended(String, UUID, String)
   case timeout(String, UUID)
+  case failed(String)
   case eof
 }
 
@@ -219,6 +241,27 @@ private struct ACPLaunchSnapshot: @unchecked Sendable {
 private struct ACPInput: ReaderStream {
   let input: AsyncStream<Data>
   func stream() -> AsyncStream<Data> { input }
+}
+
+/// Frames one backend's stdout on the runtime's I/O thread. `write` blocks
+/// while that backend's window is full, which stops the runtime from reading
+/// more; nothing is thrown, because runtimes may discard writer errors, so
+/// every outcome is reported as an event instead.
+private final class ACPBackendOutput: Writer, @unchecked Sendable {
+  private let lock = NSLock()
+  private let ingress: ACPIngress
+  private let emit: @Sendable (ACPInbound) -> Void
+
+  init(ingress: ACPIngress, emit: @escaping @Sendable (ACPInbound) -> Void) {
+    self.ingress = ingress
+    self.emit = emit
+  }
+
+  func write(_ data: Data) throws {
+    lock.withLock { ingress.receive(data, emit: emit) }
+  }
+
+  func close() throws {}
 }
 
 private struct ACPOutput: Writer {

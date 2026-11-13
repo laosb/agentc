@@ -7,6 +7,14 @@ import Synchronization
   import Foundation
 #endif
 
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#elseif canImport(Musl)
+  import Musl
+#endif
+
 /// A byte-preserving, line-oriented transcript. Each direction buffers incomplete
 /// lines independently, including UTF-8 sequences split across runtime reads.
 final class StdioLog: Sendable {
@@ -65,17 +73,26 @@ final class StdioLog: Sendable {
 
   private func append(_ data: Data, to pending: inout Data, stream: Stream) throws {
     // Scan only new bytes; repeatedly searching the entire pending line would
-    // make heavily fragmented protocol messages quadratic.
-    var start = data.startIndex
-    for index in data.indices {
-      if data[index] == 0x0a || pending.count + index - start + 1 >= Self.maximumRecordBytes {
-        pending.append(data[start...index])
+    // make heavily fragmented protocol messages quadratic. Search in bulk:
+    // large messages make a per-byte loop the dominant cost of logging.
+    try data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+      var start = 0
+      while start < bytes.count {
+        // A record ends at a newline or when it reaches the size bound.
+        let room = Self.maximumRecordBytes - pending.count
+        let window = min(room, bytes.count - start)
+        let newline = memchr(bytes.baseAddress! + start, 0x0a, window)
+        let end = newline.map { bytes.baseAddress!.distance(to: UnsafeRawPointer($0)) + 1 }
+        guard let end = end ?? (window == room ? start + window : nil) else {
+          pending.append(contentsOf: bytes[start...])
+          return
+        }
+        pending.append(contentsOf: bytes[start..<end])
         try writeRecord(pending, stream: stream)
         pending.removeAll(keepingCapacity: true)
-        start = index + 1
+        start = end
       }
     }
-    pending.append(data[start...])
   }
 
   private func writeRecord(_ data: Data, stream: Stream) throws {

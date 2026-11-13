@@ -34,8 +34,11 @@ while IFS= read -r line; do
         result="{\"sessionId\":\"same-native-id\",\"cwd\":\"$PWD\",\"visible\":{${visible%,}}}"
         ;;
       *'"method":"_opaque"'*)
-        printf 'malformed backend message\n'
         result=$(printf '%s' "$line" | sed 's/.*"params":\(.*\)}$/\1/')
+        ;;
+      *'"method":"_malformed"'*)
+        printf 'malformed backend message\n'
+        result='{}'
         ;;
       *) result='{}' ;;
     esac
@@ -103,9 +106,11 @@ def main():
         threading.Thread(target=read_stderr, daemon=True).start()
 
         def request(number, method, params):
+            # This minimal shell fixture recognizes compact JSON. The proxy now
+            # preserves whitespace instead of normalizing it during forwarding.
             process.stdin.write(json.dumps({
                 "jsonrpc": "2.0", "id": number, "method": method, "params": params
-            }) + "\n")
+            }, separators=(",", ":")) + "\n")
             process.stdin.flush()
             response = responses.get(timeout=150)
             assert response is not None, f"Unexpected EOF: {stderr}"
@@ -133,12 +138,30 @@ def main():
             assert "error" in request(4, "session/add_directory", {
                 "sessionId": session_ids[0], "path": str(hidden),
             })
+            # Malformed client input is answered with a parse error, never dropped.
             process.stdin.write("malformed client message\n")
             process.stdin.flush()
+            parse_error = responses.get(timeout=150)
+            assert parse_error is not None, f"Unexpected EOF: {stderr}"
+            assert parse_error["id"] is None, parse_error
+            assert parse_error["error"]["code"] == -32700, parse_error
             opaque = {"sessionId": session_ids[1], "unknown": {"array": [True, None, "🌍"]}}
             result = request(5, "_opaque", opaque)["result"]
             # The echo has a top-level sessionId, so the proxy namespaces it again.
             assert result == opaque, result
+            # Large enough to be spooled to disk in both directions; the payload
+            # is opaque and must come back unchanged. (Kept modest because this
+            # shell agent reads a byte at a time; the unit tests and
+            # scripts/benchmark-acp-large.sh cover hundreds of MiB.)
+            large = {"sessionId": session_ids[1], "blob": "QUdFTlRD" * (192 * 1024)}
+            response = request(6, "_opaque", large)
+            assert response["result"] == large, str(response)[:300]
+            # A malformed backend line may have been an awaited response and has
+            # no trustworthy id: that backend is stopped and its requests fail.
+            # (Previously such a line was only logged and the backend kept running.)
+            failed = request(7, "_malformed", {"sessionId": session_ids[1]})
+            assert failed["error"]["code"] == -32603, failed
+            assert "result" in request(8, "_opaque", {"sessionId": session_ids[0]})
             if os.environ.get("AGENTC_TEST_ACP_SIGNAL") == "1":
                 process.terminate()
             else:

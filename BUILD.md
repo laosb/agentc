@@ -102,6 +102,13 @@ For local NAT-versus-proxy throughput, RTT, helper CPU, and RSS measurements, se
 [the network benchmark guide](docs/network-benchmark.md). Measure release binaries
 for shipping performance; keep debug/release results separate.
 
+ACP forwards large messages, within the quotas documented in the README, with
+bounded memory. To measure that without a
+container, `scripts/benchmark-acp-large.sh [MiB]` sends one synthetic message
+(321 MiB by default, three opaque image blocks, routing fields last) through the
+framing, flow-control, spool, proxy, and backend-stream pipeline in a release
+build, and reports throughput and peak resident-memory growth.
+
 On macOS, enable both runtime traits when working on Apple Containerization code:
 
 ```sh
@@ -125,7 +132,9 @@ python3 scripts/test-host-mcp.py
 It defaults to Apple Containerization on macOS and Docker elsewhere, using
 `swift:6.4`. Override with `AGENTC_TEST_RUNTIME` / `AGENTC_TEST_IMAGE`. The test
 checks two isolated workspaces, settings and CLI mounts, exclusions, protocol
-routing, extension passthrough, malformed-message recovery, logging, and cleanup
+routing, extension passthrough, a spooled 1.5 MiB message, malformed-message
+handling (a parse error for the client, failure of the offending backend),
+logging, and cleanup
 on EOF or SIGTERM. Python 3 is needed on the host; the image needs `/bin/sh` and
 `sed`. The regular `AgentcTests` include runtime-independent ACP state-machine
 and policy tests.

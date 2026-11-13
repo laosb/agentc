@@ -187,12 +187,52 @@ backend; projects selecting another profile need credentials in that profile.
 Session IDs are namespaced by workspace to avoid collisions and can be passed
 back to `session/load` / `session/resume` with the same cwd.
 
-JSON parsing uses Swift Codable. Unknown fields and extensions are preserved;
-only routing IDs, session IDs, and unsupported advertised capabilities are
-rewritten. Recoverable protocol errors are logged and processing continues.
-Rejected requests receive JSON-RPC errors; a failed backend does not stop other
-workspaces. Backend initialization times out after 120 seconds, and individual
-JSON messages are limited to 16 MiB.
+Messages are forwarded as opaque bytes. Every line is validated as JSON
+(RFC 8259 grammar, well-formed UTF-8, paired surrogate escapes, at most 512
+levels of nesting) by a streaming scanner, and only the routing values, the
+JSON-RPC `id` and `params.sessionId` / `result.sessionId`, are replaced in
+place. Attachments, numbers, member order, and unknown fields and extensions
+reach the other side byte for byte, and numeric IDs are echoed as the exact
+token the client sent. Only `initialize`, `session/new`, `session/load`,
+`session/resume`, and initialization responses are decoded and re-encoded with
+Swift Codable, to apply workspace policy and remove unsupported advertised
+capabilities. A message that repeats a routing member (`id`, `method`,
+`params`, `result`, `error`, `jsonrpc`, or a `sessionId` directly inside
+`params` or `result`) is rejected rather than routed.
+
+Memory use does not grow with message size:
+
+| Limit | Value |
+| --- | --- |
+| Held in memory; larger messages are spooled to disk | 256 KiB |
+| Messages the proxy decodes (the methods listed above) | 1 MiB |
+| One message, either direction | 1 GiB |
+| Disk used by all in-flight spooled messages | 4 GiB |
+| Undelivered messages per input stream, after which reading pauses | 64 messages and 4 MiB in memory |
+| Session requests waiting for workspace backends to start | 8 MiB |
+| `id` / `method` / `sessionId` length | 256 bytes / 256 bytes / 8 KiB |
+
+Spool files live in a private (`0700`) directory under the system temporary
+directory, outside every container mount, and are unlinked as soon as they are
+created, so their space is reclaimed however `agentc` exits. A large message is
+forwarded only once it has been received and validated in full. When a peer
+stops reading, the proxy stops reading from the peers that are sending to it
+instead of buffering, as a direct pipe would; since all workspaces share the
+client connection, one stalled backend can eventually delay client traffic to
+the others.
+
+Nothing is dropped silently. A client line that is not valid JSON gets a
+JSON-RPC parse error (`-32700`) with `id: null`, because no field of it can be
+trusted. A well-formed request that is too large, exhausts the spool quota, or
+has an invalid envelope gets an error (`-32600`) with its own `id`, wherever in
+the message that `id` appeared. If an agent sends a line that is not valid JSON, or one
+that cannot be matched to a request, that workspace backend is stopped and
+everything it owes is answered with an error, since the line may have been a
+response a client is waiting for; an oversized agent response fails only its
+own request. Rejected requests receive JSON-RPC errors, and a failed backend
+does not stop other workspaces. Backend initialization times out after 120
+seconds.
+
 
 #### Host stdio MCP servers
 
@@ -270,6 +310,8 @@ original bytes unchanged. It works independently of `--verbose` and `--log-file`
 
 On `acp`, this option records the client-facing traffic, before incoming routing
 rewrites and after outgoing rewrites; internal initialization traffic is omitted.
+Incoming bytes are recorded as received, including messages that are then
+rejected, so the transcript of a very large message is as large as the message.
 
 ```sh
 agentc run --log-file agentc.log --stdio-log-file stdio.log
