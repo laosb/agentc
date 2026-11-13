@@ -102,8 +102,8 @@ For local NAT-versus-proxy throughput, RTT, helper CPU, and RSS measurements, se
 [the network benchmark guide](docs/network-benchmark.md). Measure release binaries
 for shipping performance; keep debug/release results separate.
 
-ACP forwards large messages, within the quotas documented in the README, with
-bounded memory. To measure that without a
+ACP forwards large messages (up to 1 GiB per message) with bounded memory.
+To measure that without a
 container, `scripts/benchmark-acp-large.sh [MiB]` sends one synthetic message
 (321 MiB by default, three opaque image blocks, routing fields last) through the
 framing, flow-control, spool, proxy, and backend-stream pipeline in a release
