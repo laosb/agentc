@@ -81,9 +81,11 @@ struct AgentcIntegrationTests {
     #expect(result.stdout.contains("hello-from-sh"))
   }
 
-  @Test("--profile creates profile dir at expected path")
-  func profileFlag() async throws {
-    let profile = "__TEST_agentc_profile_flag"
+  @Test("--profile creates profile dir at expected path", .serialized, arguments: [0, 1])
+  func profileFlag(_ invocation: Int) async throws {
+    // Each invocation owns a fresh profile, including repeated native/static
+    // runs: Docker may chown its contents so host-side cleanup cannot remove it.
+    let profile = "__TEST_agentc_profile_flag_\(invocation)_\(UUID().uuidString)"
     let profileHome = URL(fileURLWithPath: NSHomeDirectory())
       .appendingPathComponent(".agentc/profiles/\(profile)/home")
     try stubProfileHome(at: profileHome)

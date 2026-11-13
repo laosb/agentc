@@ -177,7 +177,9 @@ func stubProfileHome(at homeDir: URL) throws {
 // MARK: - Shared Profile
 
 let sharedProfile: String = {
-  let profileName = "__TEST_agentc_shared"
+  // Share within this test process, never across native/static test passes.
+  // Guest ownership can prevent the host from replacing stubs in an old home.
+  let profileName = "__TEST_agentc_shared_\(UUID().uuidString)"
   let profileDir = URL(fileURLWithPath: NSHomeDirectory())
     .appendingPathComponent(".agentc/profiles/\(profileName)/home")
   try? stubProfileHome(at: profileDir)
