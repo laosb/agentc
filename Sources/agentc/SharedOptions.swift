@@ -258,11 +258,7 @@ extension SharedOptions {
 
   /// Resolve configurations directory.
   func resolveConfigurationsDir() -> URL {
-    if let dir = configurationsDir, !dir.isEmpty {
-      return URL(fileURLWithPath: dir)
-    }
-    return MigrationCheck.homeDir
-      .appending(path: ".agentc/configurations")
+    ConfigurationsManager.resolveDirectory(explicit: configurationsDir)
   }
 
   /// Resolve workspace URL.

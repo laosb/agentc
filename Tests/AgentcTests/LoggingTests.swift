@@ -15,6 +15,10 @@ struct LoggingTests {
       ["profiles", "--log-file", "agent.log", "list", "--verbose"],
       ["profiles", "remove", "--log-file", "agent.log", "--verbose", "missing"],
       ["images", "list", "--log-file", "agent.log", "--verbose"],
+      ["configs", "--log-file", "agent.log", "--verbose"],
+      ["configs", "--log-file", "agent.log", "status", "--verbose"],
+      ["configs", "--log-file", "agent.log", "update", "--verbose"],
+      ["configs", "update", "--log-file", "agent.log", "--verbose"],
       ["version", "--log-file", "agent.log", "--verbose"],
       ["migrate-from-claudec", "--log-file", "agent.log", "--verbose"],
       ["--log-file", "agent.log", "--verbose", "--stdio-log-file", "stdio.log"],
@@ -146,7 +150,7 @@ func temporaryLogDirectory() throws -> URL {
 
 private final class LoggingTestBundle: NSObject {}
 
-private func runCLI(_ arguments: [String]) async throws
+func runCLI(_ arguments: [String]) async throws
   -> (status: Int32, stdout: String, stderr: String)
 {
   try await blockingIO { try runCLIBlocking(arguments) }

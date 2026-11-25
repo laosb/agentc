@@ -20,6 +20,7 @@ agentc run -c claude,copilot
 
 This prepares both agents and launches Copilot. In general, the last configuration with a launch command wins.
 Browse [available configurations](https://github.com/laosb/agent-isolation-configurations) for more agents.
+Run `agentc configs` to inspect the local configurations repository and commit, or `agentc configs update` to pull the latest configurations immediately.
 
 ## Keep work and personal profiles separate
 
